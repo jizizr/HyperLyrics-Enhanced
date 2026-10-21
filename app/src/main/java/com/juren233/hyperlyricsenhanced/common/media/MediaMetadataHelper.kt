@@ -39,6 +39,7 @@ object MediaMetadataHelper {
     private const val ARTWORK_PENDING_CACHE_TTL_MS = 5_000L
     private const val MEDIA_INFO_CACHE_TTL_MS = 3_000L
     private const val SESSION_REFRESH_COOLDOWN_MS = 1_000L
+    private const val NEXT_LOOKUP_FAILURE_CACHE_MS = 1_000L
     private const val ARTWORK_CONNECT_TIMEOUT_MS = 2_500
     private const val ARTWORK_READ_TIMEOUT_MS = 4_000
     private const val ARTWORK_LOG_TAG = "MediaArtworkResolver"
@@ -48,6 +49,8 @@ object MediaMetadataHelper {
     private val mediaInfoLock = Any()
     private val mediaInfoCache = HashMap<String, CachedMediaInfo>()
     private var mediaInfoGeneration = 0L
+    private val nextLookupFailureLock = Any()
+    private val nextLookupFailures = HashMap<String, CachedNextLookupFailure>()
     private val controllerCallbacks = HashMap<MediaSession.Token, ControllerCallback>()
     private val lastSessionRefreshByPackage = HashMap<String, Long>()
     private val lastTrackSignatureByPackage = HashMap<String, String>()
@@ -188,6 +191,7 @@ object MediaMetadataHelper {
         artworkResolvedListener = null
         mediaInfoChangedListener = null
         releaseSessionObservers()
+        synchronized(nextLookupFailureLock) { nextLookupFailures.clear() }
         synchronized(artworkLock) {
             artworkCache.clear()
             pendingArtworkRequests.clear()
@@ -310,6 +314,21 @@ object MediaMetadataHelper {
         if (!OfficialProviderCatalog.supportsNextTrackPreview(packageName)) {
             return NextMediaLookup(reason = "next_track_unsupported")
         }
+        // 预览窗口内每个位置 tick 都会调用；失败结果短缓存，避免反复做跨进程查询。
+        val failureKey = nextLookupFailureKey(packageName, current)
+        cachedNextLookupFailure(failureKey)?.let { return it }
+        val result = lookupNextMedia(context, packageName, current)
+        if (result.mediaInfo.title.isBlank()) {
+            rememberNextLookupFailure(failureKey, result)
+        }
+        return result
+    }
+
+    private fun lookupNextMedia(
+        context: Context,
+        packageName: String,
+        current: MediaInfo,
+    ): NextMediaLookup {
         return try {
             val controller = findController(context, packageName)
                 ?: return NextMediaLookup(reason = "controller_missing")
@@ -359,6 +378,31 @@ object MediaMetadataHelper {
             )
         } catch (_: Exception) {
             NextMediaLookup(reason = "lookup_exception")
+        }
+    }
+
+    private fun nextLookupFailureKey(packageName: String, current: MediaInfo): String =
+        "$packageName\u001F${current.title}\u001F${current.artist}\u001F${current.duration}"
+
+    private fun cachedNextLookupFailure(key: String): NextMediaLookup? =
+        synchronized(nextLookupFailureLock) {
+            val cached = nextLookupFailures[key] ?: return@synchronized null
+            val now = SystemClock.uptimeMillis()
+            if (now - cached.recordedAtMs < NEXT_LOOKUP_FAILURE_CACHE_MS) {
+                cached.lookup
+            } else {
+                nextLookupFailures.remove(key)
+                null
+            }
+        }
+
+    private fun rememberNextLookupFailure(key: String, lookup: NextMediaLookup) {
+        val now = SystemClock.uptimeMillis()
+        synchronized(nextLookupFailureLock) {
+            nextLookupFailures.entries.removeAll {
+                now - it.value.recordedAtMs >= NEXT_LOOKUP_FAILURE_CACHE_MS
+            }
+            nextLookupFailures[key] = CachedNextLookupFailure(lookup, now)
         }
     }
 
@@ -1039,6 +1083,11 @@ object MediaMetadataHelper {
     private data class CachedMediaInfo(
         val info: MediaInfo,
         val expiresAtMs: Long,
+    )
+
+    private data class CachedNextLookupFailure(
+        val lookup: NextMediaLookup,
+        val recordedAtMs: Long,
     )
 
     private data class ControllerCallback(
