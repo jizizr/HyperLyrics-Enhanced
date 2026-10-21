@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.PowerManager
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.mediacard.notification.NotificationMediaAodLyricHooker
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -15,17 +16,22 @@ internal object SystemUiScreenStateMonitor {
 
     private var registeredApp: Application? = null
     @Volatile private var receiver: BroadcastReceiver? = null
+    @Volatile private var interactive = true
     private var cleanupFailure: Throwable? = null
+
+    fun isInteractive(): Boolean = interactive
 
     fun initialize(app: Application) {
         if (registeredApp === app && receiver != null) return
         cleanup()
+        interactive = app.getSystemService(PowerManager::class.java)?.isInteractive ?: true
 
         val screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (receiver !== this) return
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_ON -> {
+                        interactive = true
                         MediaCardDiagnosticLogger.log(
                             stage = "screen",
                             event = "screen_on",
@@ -37,6 +43,7 @@ internal object SystemUiScreenStateMonitor {
                     }
 
                     Intent.ACTION_SCREEN_OFF -> {
+                        interactive = false
                         MediaCardDiagnosticLogger.log(
                             stage = "screen",
                             event = "screen_off",

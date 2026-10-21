@@ -12,6 +12,7 @@ import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.root.HookEntry
 import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
+import com.juren233.hyperlyricsenhanced.root.SystemUiScreenStateMonitor
 import com.juren233.hyperlyricsenhanced.root.island.IslandAlbumCoverStyleHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandContentUpdateCoordinator
 import com.juren233.hyperlyricsenhanced.root.island.IslandHostFacade
@@ -82,6 +83,10 @@ object BaseIslandRenderer : IslandRenderer {
     @Volatile
     private var screenRefreshGeneration = 0
 
+    // 息屏期间跳过了逐字推进，亮屏后首个位置更新要先对齐而不是补动画。
+    @Volatile
+    private var pendingScreenOnSeek = false
+
     /**
      * Source lifecycle events are the authority for lyric rendering state.
      * Hook paths must not re-query MediaSession here: during a lyric refresh the source can
@@ -114,6 +119,7 @@ object BaseIslandRenderer : IslandRenderer {
 
     fun onScreenInteractive() {
         if (retiredForReload) return
+        pendingScreenOnSeek = true
         val generation = ++screenRefreshGeneration
         SCREEN_ON_REFRESH_DELAYS_MS.forEach { delay ->
             mainHandler.postDelayed(
@@ -141,6 +147,7 @@ object BaseIslandRenderer : IslandRenderer {
 
     fun onScreenNonInteractive() {
         screenRefreshGeneration++
+        pendingScreenOnSeek = false
         DisplayDiagnosticLogger.clear("ISLAND/screen_on")
     }
 
@@ -365,15 +372,23 @@ object BaseIslandRenderer : IslandRenderer {
 
     override fun updatePosition(position: Long) {
         if (retiredForReload) return
+        if (pendingScreenOnSeek) {
+            pendingScreenOnSeek = false
+            updatePositionForActiveViews(position, isSeek = true)
+            return
+        }
         updatePositionForActiveViews(position, isSeek = false)
     }
 
     override fun seekTo(position: Long) {
         if (retiredForReload) return
+        pendingScreenOnSeek = false
         updatePositionForActiveViews(position, isSeek = true)
     }
 
     private fun updatePositionForActiveViews(position: Long, isSeek: Boolean) {
+        // 息屏时超级岛不可见，位置、光效和下一首预览都不必处理；息屏歌词走独立路径。
+        if (!SystemUiScreenStateMonitor.isInteractive()) return
         val prefs = HookEntry.instance?.prefs ?: return
         if (!prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_HYPER_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_HYPER_ISLAND)) return
         if (!shouldRenderInjectedIsland()) return
