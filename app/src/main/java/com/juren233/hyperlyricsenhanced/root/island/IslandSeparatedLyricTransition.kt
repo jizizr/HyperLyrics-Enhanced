@@ -41,7 +41,7 @@ internal object IslandSeparatedLyricTransition {
     fun update(
         view: View,
         split: Boolean,
-        key: String,
+        key: Any,
         duration: Long,
         wholeLine: IRichLyricLine?,
         incoming: (RichLyricLineView, Boolean) -> IRichLyricLine?,
@@ -122,7 +122,7 @@ internal object IslandSeparatedLyricTransition {
     private class Transition(
         val left: RichLyricLineView,
         val right: RichLyricLineView,
-        val key: String,
+        val key: Any,
         val duration: Long,
         val oldSplit: Boolean,
         val split: Boolean,

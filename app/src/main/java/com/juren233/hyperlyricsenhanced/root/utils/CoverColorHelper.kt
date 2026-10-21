@@ -3,6 +3,7 @@ package com.juren233.hyperlyricsenhanced.root.utils
 import android.graphics.Bitmap
 import com.juren233.hyperlyricsenhanced.common.color.ColorExtractor
 import com.juren233.hyperlyricsenhanced.common.color.PerceptualGradient
+import java.lang.ref.WeakReference
 
 object CoverColorHelper {
 
@@ -44,6 +45,11 @@ object CoverColorHelper {
     private var cachedLightColors: IntArray? = null
     private var cachedDarkColors: IntArray? = null
     private val keyedCache = LinkedHashMap<String, CacheEntry>()
+    private var artworkKeyBitmap: WeakReference<Bitmap>? = null
+    private var artworkKeyGeneration = 0
+    private var artworkKeyWidth = 0
+    private var artworkKeyHeight = 0
+    private var artworkKeyValue = 0
 
     fun updateMediaSession(
         packageName: String,
@@ -103,7 +109,22 @@ object CoverColorHelper {
 
     fun currentMediaKey(): String? = activeMediaKey
 
-    fun artworkContentKey(bitmap: Bitmap): Int = bitmap.artworkSignature().hashCode()
+    fun artworkContentKey(bitmap: Bitmap): Int {
+        // 同一 Bitmap 对象逐次刷新时复用采样结果；generationId 变化说明像素被改写。
+        val generationId = bitmap.generationId
+        val sameBitmap = artworkKeyBitmap?.get() === bitmap &&
+            artworkKeyGeneration == generationId &&
+            artworkKeyWidth == bitmap.width &&
+            artworkKeyHeight == bitmap.height
+        if (sameBitmap) return artworkKeyValue
+        val key = bitmap.artworkSignature().hashCode()
+        artworkKeyBitmap = WeakReference(bitmap)
+        artworkKeyGeneration = generationId
+        artworkKeyWidth = bitmap.width
+        artworkKeyHeight = bitmap.height
+        artworkKeyValue = key
+        return key
+    }
 
     fun fallbackArtworkColor(bitmap: Bitmap): Int? = runCatching {
         sampledArtworkColor(bitmap.width, bitmap.height, bitmap::getPixel)
@@ -308,6 +329,11 @@ object CoverColorHelper {
         cachedLightColors = null
         cachedDarkColors = null
         keyedCache.clear()
+        artworkKeyBitmap = null
+        artworkKeyGeneration = 0
+        artworkKeyWidth = 0
+        artworkKeyHeight = 0
+        artworkKeyValue = 0
     }
 
     private fun buildKey(useGradient: Boolean, songKey: String?): String {

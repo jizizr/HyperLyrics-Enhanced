@@ -53,6 +53,8 @@ internal class LineShadowRenderer {
     private val promotionSlice = SpaceGatePromotionShadowSlice()
     private val promotionSource = Rect()
     private val promotionDestination = RectF()
+    private val sliceSource = Rect()
+    private val sliceDestination = RectF()
 
     /** Warm the immutable target-font mask before an animation starts; retargets reuse its key. */
     fun preparePromotion(target: SpaceGatePromotionSnapshot, shadowStyle: TextPaint): Bitmap? {
@@ -239,8 +241,10 @@ internal class LineShadowRenderer {
         if (srcRight <= srcLeft) return
         val drawX = startX + delta + naturalStart + shadowDx
         canvas.withSeamFade(fade, bitmapPaint) {
-            val src = Rect(srcLeft, 0, srcRight, bitmap.height)
-            val dst = RectF(drawX, dstTop, drawX + (srcRight - srcLeft), dstBottom)
+            val src = sliceSource.apply { set(srcLeft, 0, srcRight, bitmap.height) }
+            val dst = sliceDestination.apply {
+                set(drawX, dstTop, drawX + (srcRight - srcLeft), dstBottom)
+            }
             canvas.drawBitmap(bitmap, src, dst, bitmapPaint)
         }
     }
@@ -262,18 +266,30 @@ internal class LineShadowRenderer {
         fontSignature: Int,
         shadowRadius: Float,
     ): Bitmap? {
-        val key = CacheKey(
-            text = text,
-            textWidthBits = textWidth.toBits(),
-            textSizeBits = sourcePaint.textSize.toBits(),
-            textScaleXBits = sourcePaint.textScaleX.toBits(),
-            textSkewXBits = sourcePaint.textSkewX.toBits(),
-            fakeBold = sourcePaint.isFakeBoldText,
-            typefaceIdentity = System.identityHashCode(sourcePaint.typeface),
-            fontSignature = fontSignature,
-            shadowRadiusBits = shadowRadius.toBits(),
-        )
-        shadowBitmap?.takeIf { cacheKey == key && !it.isRecycled }?.let { return it }
+        val textWidthBits = textWidth.toBits()
+        val textSizeBits = sourcePaint.textSize.toBits()
+        val textScaleXBits = sourcePaint.textScaleX.toBits()
+        val textSkewXBits = sourcePaint.textSkewX.toBits()
+        val fakeBold = sourcePaint.isFakeBoldText
+        val typefaceIdentity = System.identityHashCode(sourcePaint.typeface)
+        val shadowRadiusBits = shadowRadius.toBits()
+        // 逐帧路径不构造 CacheKey：先做标量比较，文本优先按引用短路。
+        val cachedBitmap = shadowBitmap
+        val cachedKey = cacheKey
+        if (cachedBitmap != null && cachedKey != null && !cachedBitmap.isRecycled &&
+            cachedKey.textWidthBits == textWidthBits &&
+            cachedKey.textSizeBits == textSizeBits &&
+            cachedKey.textScaleXBits == textScaleXBits &&
+            cachedKey.textSkewXBits == textSkewXBits &&
+            cachedKey.fakeBold == fakeBold &&
+            cachedKey.typefaceIdentity == typefaceIdentity &&
+            cachedKey.fontSignature == fontSignature &&
+            cachedKey.shadowRadiusBits == shadowRadiusBits &&
+            (cachedKey.text === text ||
+                (cachedKey.text.length == text.length && cachedKey.text == text))
+        ) {
+            return cachedBitmap
+        }
 
         clear()
         return runCatching {
@@ -303,7 +319,17 @@ internal class LineShadowRenderer {
             val blurred = mask.extractAlpha(blurPaint, offset)
             mask.recycle()
 
-            cacheKey = key
+            cacheKey = CacheKey(
+                text = text,
+                textWidthBits = textWidthBits,
+                textSizeBits = textSizeBits,
+                textScaleXBits = textScaleXBits,
+                textSkewXBits = textSkewXBits,
+                fakeBold = fakeBold,
+                typefaceIdentity = typefaceIdentity,
+                fontSignature = fontSignature,
+                shadowRadiusBits = shadowRadiusBits,
+            )
             shadowBitmap = blurred
             maskPadding = padding
             extractedOffsetX = offset[0]

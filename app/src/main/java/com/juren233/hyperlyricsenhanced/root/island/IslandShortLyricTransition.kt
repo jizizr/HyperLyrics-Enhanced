@@ -37,7 +37,7 @@ internal object IslandShortLyricTransition {
     fun update(
         view: View,
         continuous: Boolean,
-        key: String,
+        key: Any,
         duration: Long,
         incoming: IRichLyricLine?,
         allowRightPreviewHandoff: Boolean = false,
@@ -130,7 +130,7 @@ internal object IslandShortLyricTransition {
     private class Transition(
         val left: SpaceGateRichLyricLineView,
         val right: SpaceGateRichLyricLineView,
-        val key: String,
+        val key: Any,
         val duration: Long,
         val incoming: IRichLyricLine,
         val source: SpaceGatePromotionSnapshot,

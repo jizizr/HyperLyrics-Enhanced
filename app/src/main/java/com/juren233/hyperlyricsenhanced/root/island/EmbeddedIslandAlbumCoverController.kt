@@ -89,9 +89,9 @@ internal object EmbeddedIslandAlbumCoverController {
 
     fun setPlaybackActive(active: Boolean) {
         if (playbackActive == active) {
-            // 暂停态可能由多个 Hook 先后上报（渲染态、展开媒体卡绑定）。重复收到暂停时
-            // 重新起算缓冲宽限，否则更早的一次暂停会提前耗尽宽限，切歌缓冲时模糊就被隐藏。
-            if (!active) restartBufferingGrace()
+            // 重复暂停不能续期：有些 provider 暂停期间会周期性重发 false，续期会让
+            // 真正暂停时右侧模糊永远不隐藏。只为“尚未开始计时”的暂停补一次。
+            if (!active && inactiveSinceMs == 0L) restartBufferingGrace()
             return
         }
         playbackActive = active

@@ -112,6 +112,17 @@ internal object IslandSlotContentAssembler {
         val showRoma: Boolean = false
     )
 
+    /** 结构比较替代每帧 joinToString：只分配一个短生命周期对象。 */
+    private data class LyricTransitionKey(
+        val continuous: Boolean,
+        val version: Int,
+        val lineSignature: Int,
+        val styleSignature: String,
+        val title: String,
+        val artist: String,
+        val album: String,
+    )
+
     fun invalidate(view: View? = null) {
         if (view == null) {
             synchronized(lastContentSignatures) { lastContentSignatures.clear() }
@@ -420,9 +431,15 @@ internal object IslandSlotContentAssembler {
             ) {
                 applyPlaybackActive(view, playbackActive)
                 val wholeLine = displayLyricLine(prefs, processedRawLine(prefs, config))
-                val key = listOf(!independentSlots, LyriconDataBridge.versionCounter.get(),
-                    lineContentSignature(wholeLine), config.styleSignature,
-                    mediaInfo.title, mediaInfo.artist, mediaInfo.album).joinToString("|")
+                val key = LyricTransitionKey(
+                    continuous = !independentSlots,
+                    version = LyriconDataBridge.versionCounter.get(),
+                    lineSignature = lineContentSignature(wholeLine),
+                    styleSignature = config.styleSignature,
+                    title = mediaInfo.title,
+                    artist = mediaInfo.artist,
+                    album = mediaInfo.album,
+                )
                 val result = IslandSeparatedLyricTransition.update(
                     view, !independentSlots, key,
                     if (previewEnabled) 220L else (300L * config.switchAnimRateFactor).toLong().coerceAtLeast(1L),
@@ -447,11 +464,17 @@ internal object IslandSlotContentAssembler {
                 !isInterludeIndicatorLine(LyriconDataBridge.currentLyricLine)
             if (canTransitionRoles) {
                 applyPlaybackActive(view, playbackActive)
-                val key = listOf(
-                    !independentSlots, LyriconDataBridge.versionCounter.get(),
-                    lineContentSignature(lineOverride ?: processedRawLine(prefs, config)),
-                    config.styleSignature, mediaInfo.title, mediaInfo.artist, mediaInfo.album,
-                ).joinToString("|")
+                val key = LyricTransitionKey(
+                    continuous = !independentSlots,
+                    version = LyriconDataBridge.versionCounter.get(),
+                    lineSignature = lineContentSignature(
+                        lineOverride ?: processedRawLine(prefs, config)
+                    ),
+                    styleSignature = config.styleSignature,
+                    title = mediaInfo.title,
+                    artist = mediaInfo.artist,
+                    album = mediaInfo.album,
+                )
                 val duration = if (previewEnabled || config.nextLineOnRight) 220L
                     else (300L * config.switchAnimRateFactor).toLong().coerceAtLeast(1L)
                 val transitionResult = IslandShortLyricTransition.update(
