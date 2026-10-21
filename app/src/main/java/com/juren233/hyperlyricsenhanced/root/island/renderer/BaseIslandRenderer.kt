@@ -763,14 +763,26 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
-    /** 预览结束或无法显示时，先解除槽位内容归属，常规歌词才能写回。 */
-    private fun clearNextSongPreviewContentMarkers(cv: ViewGroup) {
-        IslandSlotContentAssembler.clearNextSongPreviewContent(
+    /** 预览结束或无法显示时，先解除槽位内容归属，常规歌词才能写回；返回是否真的释放了标记。 */
+    private fun clearNextSongPreviewContentMarkers(cv: ViewGroup): Boolean {
+        if (!IslandSlotContentAssembler.hasAnyNextSongPreviewContent()) return false
+        return IslandSlotContentAssembler.clearNextSongPreviewContent(
             listOf(
                 cv.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
                 cv.findViewWithTag(IslandProbeUtils.RIGHT_TEST_VIEW_TAG),
             )
         )
+    }
+
+    private fun restoreSlotsAfterPreviewRelease(
+        cv: ViewGroup,
+        prefs: android.content.SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        mediaInfo: MediaMetadataHelper.MediaInfo
+    ): Boolean {
+        val leftRestored = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+        val rightRestored = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+        return leftRestored || rightRestored
     }
 
     private fun refreshLyricTimingCache(song: Song?) {
@@ -805,8 +817,10 @@ object BaseIslandRenderer : IslandRenderer {
         }
         if (!config.nextSongPreviewEnabled && previewState == null) {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
-            clearNextSongPreviewContentMarkers(cv)
-            return false
+            if (!clearNextSongPreviewContentMarkers(cv)) return false
+            // 标记真的被释放时必须立刻写回歌词，不能等下一次进度回调。
+            val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
+            return restoreSlotsAfterPreviewRelease(cv, prefs, config, mediaInfo)
         }
 
         val song = LyriconDataBridge.currentSong
@@ -828,10 +842,14 @@ object BaseIslandRenderer : IslandRenderer {
 
         if (!shouldShow) {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
-            clearNextSongPreviewContentMarkers(cv)
-            if (previewState == null) return false
-            synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
-            if (BuildConfig.DEBUG) {
+            val hadPreviewState = synchronized(nextSongPreviewActive) {
+                nextSongPreviewActive.remove(cv) != null
+            }
+            val releasedSlots = clearNextSongPreviewContentMarkers(cv)
+            // 整岛刷新会先清掉预览状态但保留槽位标记；这里只要标记被释放就必须恢复歌词，
+            // 否则切歌/前奏期间“下一首”会一直留在岛上，直到下一句歌词到来。
+            if (!hadPreviewState && !releasedSlots) return false
+            if (BuildConfig.DEBUG && hadPreviewState) {
                 val leftView = cv.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
                 val rightView = cv.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
                 HookLogger.i(
@@ -843,16 +861,15 @@ object BaseIslandRenderer : IslandRenderer {
                         "position=$position, duration=$duration, attached=${cv.isAttachedToWindow}"
                 )
             }
-            val leftRestored = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
-            val rightRestored = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
-            if (BuildConfig.DEBUG) {
+            val restored = restoreSlotsAfterPreviewRelease(cv, prefs, config, mediaInfo)
+            if (BuildConfig.DEBUG && hadPreviewState) {
                 HookLogger.i(
                     "BaseIslandRenderer",
-                    "[PreviewEndDiag] restored left=$leftRestored, right=$rightRestored"
+                    "[PreviewEndDiag] restored=$restored"
                 )
             }
-            HookLogger.i("BaseIslandRenderer", "已结束下首歌曲信息预览")
-            return false
+            if (hadPreviewState) HookLogger.i("BaseIslandRenderer", "已结束下首歌曲信息预览")
+            return restored
         }
 
         val expectedTargetIsLeft = if (
@@ -897,8 +914,11 @@ object BaseIslandRenderer : IslandRenderer {
                             "当前歌曲=${mediaInfo.title}",
                     )
                 }
-                clearNextSongPreviewContentMarkers(cv)
-                return false
+                return if (clearNextSongPreviewContentMarkers(cv)) {
+                    restoreSlotsAfterPreviewRelease(cv, prefs, config, mediaInfo)
+                } else {
+                    false
+                }
             }
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
             val createdState = NextSongPreviewState(

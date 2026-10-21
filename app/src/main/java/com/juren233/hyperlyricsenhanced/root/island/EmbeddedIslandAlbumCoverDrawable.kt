@@ -56,6 +56,18 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         blendMode = BlendMode.DST_IN
     }
     private val clipPath = Path()
+    private val clipBounds = RectF()
+    private val clipRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
+    private var clipLeft = Float.NaN
+    private var clipTop = Float.NaN
+    private var clipRight = Float.NaN
+    private var clipRadius = Float.NaN
+    private val coverTargetRect = RectF()
+    private val coverSourceRect = Rect()
+    private val transitionRawTarget = RectF()
+    private val transitionBlurTarget = RectF()
+    private val transitionRawSource = Rect()
+    private val transitionFullSource = Rect()
     private val nativeBlurEffect = RenderEffect.createBlurEffect(
         IslandGradientCoverLayout.embeddedTransitionBlurRadiusX(density),
         IslandGradientCoverLayout.embeddedTransitionBlurRadiusY(density),
@@ -144,30 +156,34 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         ) ?: return
 
         canvas.save()
-        clipPath.reset()
-        clipPath.addRoundRect(
-            RectF(
-                canvasLeft,
-                canvasTop,
-                bounds.right.toFloat(),
-                canvasTop + height,
-            ),
-            floatArrayOf(
-                radius, radius,
-                0f, 0f,
-                0f, 0f,
-                radius, radius,
-            ),
-            Path.Direction.CW,
-        )
+        val boundsRight = bounds.right.toFloat()
+        if (clipRadius != radius || clipLeft != canvasLeft ||
+            clipTop != canvasTop || clipRight != boundsRight
+        ) {
+            clipPath.reset()
+            clipBounds.set(canvasLeft, canvasTop, boundsRight, canvasTop + height)
+            clipRadii[0] = radius
+            clipRadii[1] = radius
+            clipRadii[6] = radius
+            clipRadii[7] = radius
+            clipPath.addRoundRect(clipBounds, clipRadii, Path.Direction.CW)
+            clipRadius = radius
+            clipLeft = canvasLeft
+            clipTop = canvasTop
+            clipRight = boundsRight
+        }
         canvas.clipPath(clipPath)
 
         val cropLeft = kotlin.math.floor(crop.left).toInt().coerceIn(0, source.width - 1)
         val cropTop = kotlin.math.floor(crop.top).toInt().coerceIn(0, source.height - 1)
         val cropRight = kotlin.math.ceil(crop.right).toInt().coerceIn(cropLeft + 1, source.width)
         val cropBottom = kotlin.math.ceil(crop.bottom).toInt().coerceIn(cropTop + 1, source.height)
-        val coverTarget = RectF(canvasLeft, canvasTop, coverRight, canvasTop + height)
-        val coverSource = Rect(cropLeft, cropTop, cropRight, cropBottom)
+        val coverTarget = coverTargetRect.apply {
+            set(canvasLeft, canvasTop, coverRight, canvasTop + height)
+        }
+        val coverSource = coverSourceRect.apply {
+            set(cropLeft, cropTop, cropRight, cropBottom)
+        }
 
         // 暂停态（含显示歌名歌手的有字态）封面置顶：先画完整过渡层，封面最后画并盖住其
         // 侵入封面的重叠区，封面保持 100% 清晰，渐变仅从封面右缘向外可见；过渡层原有的
@@ -196,28 +212,24 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         var nativeBlurEnabled = false
         var nativeBlurAvailable = false
         if (transitionPrepared) {
-            val rawTarget = RectF(
-                coverRight - transitionInset,
-                canvasTop,
-                extensionEnd,
-                canvasTop + height,
-            )
-            val blurTarget = RectF(
-                coverRight - blurInset,
-                canvasTop,
-                extensionEnd,
-                canvasTop + height,
-            )
+            val rawTarget = transitionRawTarget.apply {
+                set(coverRight - transitionInset, canvasTop, extensionEnd, canvasTop + height)
+            }
+            val blurTarget = transitionBlurTarget.apply {
+                set(coverRight - blurInset, canvasTop, extensionEnd, canvasTop + height)
+            }
             val rawSourceLeft = IslandGradientCoverLayout.embeddedTransitionRawCacheOffset(
                 transitionInset = transitionInset,
                 blurInset = blurInset,
             ).roundToInt().coerceIn(0, (transitionWidth - 1).coerceAtLeast(0))
-            val rawSource = Rect(
-                rawSourceLeft,
-                0,
-                transitionWidth.coerceAtLeast(1),
-                transitionHeight.coerceAtLeast(1),
-            )
+            val rawSource = transitionRawSource.apply {
+                set(
+                    rawSourceLeft,
+                    0,
+                    transitionWidth.coerceAtLeast(1),
+                    transitionHeight.coerceAtLeast(1),
+                )
+            }
             nativeBlurEnabled = canvas.isHardwareAccelerated && !blurSuppressed
             nativeBlurAvailable = nativeBlurEnabled && ensureTransitionRenderNodeDisplayList()
             logNativeBlurState(nativeBlurAvailable)
@@ -253,18 +265,20 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 canvas.restore()
                 } else {
                     (transitionCpuBlurredTextureBitmap ?: transitionTextureBitmap)?.let { transition ->
+                    transitionFullSource.set(0, 0, transition.width, transition.height)
                     canvas.drawBitmap(
                         transition,
-                        Rect(0, 0, transition.width, transition.height),
+                        transitionFullSource,
                         blurTarget,
                         transitionPaint,
                     )
                     }
                 }
                 transitionBlurMaskBitmap?.let { mask ->
+                    transitionFullSource.set(0, 0, mask.width, mask.height)
                     canvas.drawBitmap(
                         mask,
-                        Rect(0, 0, mask.width, mask.height),
+                        transitionFullSource,
                         blurTarget,
                         maskPaint,
                     )
@@ -316,11 +330,25 @@ internal class EmbeddedIslandAlbumCoverDrawable(
             return true
         }
         recycleTransitionBitmaps()
+        val sourceWidth = cropRight - cropLeft
+        val sourceHeight = cropBottom - cropTop
+        val cacheInset = maxOf(transitionInset, blurInset)
+        val rawCacheOffset = IslandGradientCoverLayout.embeddedTransitionRawCacheOffset(
+            transitionInset = transitionInset,
+            blurInset = blurInset,
+        )
+        val sourceOverlap = sourceWidth * (cacheInset / coverWidth)
+        // 过渡纹理只读取裁剪区右缘这一条；整张源图可能有数 MB，没必要每首歌都全读。
+        val stripLeft = (cropRight - 1 - kotlin.math.ceil(sourceOverlap).toInt() - 2)
+            .coerceIn(cropLeft, (cropRight - 1).coerceAtLeast(cropLeft))
+        val stripWidth = (cropRight - stripLeft).coerceAtLeast(1)
+        val stripHeight = sourceHeight.coerceAtLeast(1)
         if (BuildConfig.DEBUG) {
             HookLogger.i(
                 "EmbeddedIslandAlbumCover",
                 "大岛边缘扩散缓存重建: cache=${width}x$targetHeight, " +
-                    "source=${source.width}x${source.height}, edgeColumns=3",
+                    "source=${source.width}x${source.height}, " +
+                    "read=${stripWidth}x$stripHeight@$stripLeft, edgeColumns=3",
             )
         }
 
@@ -334,29 +362,21 @@ internal class EmbeddedIslandAlbumCoverDrawable(
         var mask: Bitmap? = null
         var blurMask: Bitmap? = null
         return try {
-            val sourcePixels = IntArray(readable.width * readable.height)
-            readable.getPixels(
-                sourcePixels,
-                0,
-                readable.width,
-                0,
-                0,
-                readable.width,
-                readable.height,
-            )
             val texturePixels = IntArray(width * targetHeight)
             val maskPixels = IntArray(width * targetHeight)
             val blurMaskPixels = IntArray(width * targetHeight)
             val maskRow = IntArray(width)
             val blurMaskRow = IntArray(width)
-            val sourceWidth = cropRight - cropLeft
-            val sourceHeight = cropBottom - cropTop
-            val cacheInset = maxOf(transitionInset, blurInset)
-            val rawCacheOffset = IslandGradientCoverLayout.embeddedTransitionRawCacheOffset(
-                transitionInset = transitionInset,
-                blurInset = blurInset,
+            val sourcePixels = IntArray(stripWidth * stripHeight)
+            readable.getPixels(
+                sourcePixels,
+                0,
+                stripWidth,
+                stripLeft,
+                cropTop,
+                stripWidth,
+                stripHeight,
             )
-            val sourceOverlap = sourceWidth * (cacheInset / coverWidth)
             val hold = IslandGradientCoverLayout.embeddedTransitionHold(density)
             val totalWidth = (width - 1).coerceAtLeast(1).toFloat()
             val rawTotalWidth = (totalWidth - rawCacheOffset).coerceAtLeast(1f)
@@ -365,12 +385,12 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                     ((targetY + 0.5f) * sourceHeight / targetHeight) - 0.5f
                 sampleWeightedArtworkEdgeColor(
                     pixels = sourcePixels,
-                    stride = readable.width,
-                    centerY = sourceY,
-                    cropLeft = cropLeft,
-                    cropTop = cropTop,
-                    cropRight = cropRight,
-                    cropBottom = cropBottom,
+                    stride = stripWidth,
+                    centerY = sourceY - cropTop,
+                    cropLeft = 0,
+                    cropTop = 0,
+                    cropRight = cropRight - stripLeft,
+                    cropBottom = stripHeight,
                 )
             }
             val edgeDiffusion = IslandCoverEdgeDiffusion(edgeColumn)
@@ -431,13 +451,13 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                             ((targetY + 0.5f) * sourceHeight / targetHeight) - 0.5f
                         val artworkColor = sampleBilinearColor(
                             pixels = sourcePixels,
-                            stride = readable.width,
-                            centerX = sourceX,
-                            centerY = sourceY,
-                            minX = cropLeft,
-                            minY = cropTop,
-                            maxX = cropRight - 1,
-                            maxY = cropBottom - 1,
+                            stride = stripWidth,
+                            centerX = sourceX - stripLeft,
+                            centerY = sourceY - cropTop,
+                            minX = 0,
+                            minY = 0,
+                            maxX = cropRight - stripLeft - 1,
+                            maxY = stripHeight - 1,
                         )
                         blendArgbColors(
                             from = artworkColor,
@@ -714,6 +734,8 @@ internal class EmbeddedIslandAlbumCoverDrawable(
 
     private fun shouldSuppressPausedCollapsedBlur(): Boolean {
         if (EmbeddedIslandAlbumCoverController.isPlaybackActive()) return false
+        // 缓冲期播放器可能短暂上报暂停；宽限窗口内按“仍在缓冲”处理，保留右侧模糊。
+        if (EmbeddedIslandAlbumCoverController.isBufferingGraceActive()) return false
         val host = callback as? View ?: return false
         val textContainer = findDescendantByResourceName(
             host,
@@ -726,7 +748,8 @@ internal class EmbeddedIslandAlbumCoverDrawable(
                 "EmbeddedIslandAlbumCover",
                 "暂停无字默认态隐藏右侧模糊: host=${resourceName(host)}, " +
                     "textSize=${textContainer.width}x${textContainer.height}, " +
-                    "textVisibility=${textContainer.visibility}",
+                    "textVisibility=${textContainer.visibility}, " +
+                    "graceAgeMs=${EmbeddedIslandAlbumCoverController.bufferingGraceAgeMs()}",
             )
         }
         return collapsed

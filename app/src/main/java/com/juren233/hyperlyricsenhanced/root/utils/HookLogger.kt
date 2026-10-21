@@ -43,9 +43,9 @@ object HookLogger : HyperLogger {
         runCatching { module?.log(Log.DEBUG, null, finalMsg) }
     }
 
-    /** Release 下不拼接消息字符串；高频调用点用这个入口。 */
+    /** 与 d() 同等级过滤；Release 下未开启 Debug 日志等级时同样不拼接消息字符串。 */
     inline fun dLazy(tag: String, message: () -> String) {
-        if (!BuildConfig.DEBUG) return
+        if (readLogLevel() < 1) return
         d(tag, message())
     }
 
@@ -67,7 +67,8 @@ object HookLogger : HyperLogger {
         runCatching { module?.log(Log.ERROR, null, finalMsg, e) }
     }
 
-    private fun readLogLevel(): Int = runCatching {
+    @PublishedApi
+    internal fun readLogLevel(): Int = runCatching {
         val prefs = resolveLogPrefs()
         val storedLevel = prefs?.takeIf { it.contains(UIConstants.KEY_LOG_LEVEL) }
             ?.getInt(UIConstants.KEY_LOG_LEVEL, UIConstants.DEFAULT_LOG_LEVEL)

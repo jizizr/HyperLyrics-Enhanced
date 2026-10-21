@@ -1,6 +1,5 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
-import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.os.Handler
 import android.os.Looper
@@ -112,16 +111,29 @@ internal object IslandAlbumCoverRotationController {
             return
         }
 
-        state.animator = ObjectAnimator.ofFloat(
-            view,
-            View.ROTATION,
-            view.rotation,
-            view.rotation + 360f
-        ).apply {
+        state.animator = ValueAnimator.ofFloat(0f, 360f).apply {
             duration = ROTATION_DURATION_MS
             interpolator = LinearInterpolator()
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.RESTART
+            // 岛收起/被遮挡时 isShown 为 false：继续写 rotation 只会让宿主重复合成，
+            // 看不到任何视觉变化。恢复可见后的下一帧再写回当前角度。
+            addUpdateListener { animation ->
+                state.angle = animation.animatedValue as Float
+                if (!view.isShown) {
+                    state.hiddenFrames += 1
+                    if (BuildConfig.DEBUG && state.hiddenFrames == 300L) {
+                        HookLogger.d(
+                            TAG,
+                            "旋转封面不可见，已跳过 ${state.hiddenFrames} 帧旋转写入: " +
+                                "view=${System.identityHashCode(view)}",
+                        )
+                    }
+                    return@addUpdateListener
+                }
+                state.hiddenFrames = 0
+                view.rotation = state.angle
+            }
             start()
         }
     }
@@ -133,7 +145,11 @@ internal object IslandAlbumCoverRotationController {
     ) {
         state.animator?.cancel()
         state.animator = null
-        if (resetRotation) view.rotation = 0f
+        state.hiddenFrames = 0
+        if (resetRotation) {
+            state.angle = 0f
+            view.rotation = 0f
+        }
     }
 
     private fun ensureCenteredPivot(view: ImageView) {
@@ -161,6 +177,8 @@ internal object IslandAlbumCoverRotationController {
     }
 
     private data class RotationState(
-        var animator: ObjectAnimator? = null
+        var animator: ValueAnimator? = null,
+        var angle: Float = 0f,
+        var hiddenFrames: Long = 0L,
     )
 }

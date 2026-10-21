@@ -22,6 +22,8 @@ import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -46,6 +48,9 @@ internal object EmbeddedIslandAlbumCoverController {
     private const val TAG = "EmbeddedIslandAlbumCover"
     private const val VIEW_TAG = "hyperlyricsenhanced.embedded_album_cover"
     private const val FALLBACK_ICON_DP = 24f
+    // 与 PlaybackSmoothingPolicy.INACTIVE_ANCHOR_GRACE_MS 同源：缓冲期部分 app
+    // （Apple Music）向 MediaSession 上报暂停，不能立刻按暂停态隐藏右侧模糊。
+    private const val BUFFERING_BLUR_GRACE_MS = 8_000L
 
     private data class SmallState(
         val host: FrameLayout,
@@ -78,10 +83,52 @@ internal object EmbeddedIslandAlbumCoverController {
     }
     @Volatile
     private var playbackActive = true
+    private var inactiveSinceMs = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val bufferingGraceExpiry = Runnable { invalidateAllCovers() }
 
     fun setPlaybackActive(active: Boolean) {
-        if (playbackActive == active) return
+        if (playbackActive == active) {
+            // 暂停态可能由多个 Hook 先后上报（渲染态、展开媒体卡绑定）。重复收到暂停时
+            // 重新起算缓冲宽限，否则更早的一次暂停会提前耗尽宽限，切歌缓冲时模糊就被隐藏。
+            if (!active) restartBufferingGrace()
+            return
+        }
         playbackActive = active
+        mainHandler.removeCallbacks(bufferingGraceExpiry)
+        if (active) {
+            inactiveSinceMs = 0L
+        } else {
+            restartBufferingGrace()
+        }
+        invalidateAllCovers()
+    }
+
+    private fun restartBufferingGrace() {
+        inactiveSinceMs = SystemClock.elapsedRealtime()
+        mainHandler.removeCallbacks(bufferingGraceExpiry)
+        // 宽限期结束后重绘一次，让真正持续暂停的收起态再隐藏模糊。
+        mainHandler.postDelayed(bufferingGraceExpiry, BUFFERING_BLUR_GRACE_MS)
+        if (BuildConfig.DEBUG) {
+            HookLogger.d(
+                TAG,
+                "封面进入缓冲宽限: playbackActive=$playbackActive, " +
+                    "graceMs=$BUFFERING_BLUR_GRACE_MS",
+            )
+        }
+    }
+
+    fun isPlaybackActive(): Boolean = playbackActive
+
+    /** 刚转入非播放态：仍处于缓冲假暂停窗口，模糊按播放态处理。 */
+    fun isBufferingGraceActive(): Boolean =
+        !playbackActive && inactiveSinceMs > 0L &&
+            SystemClock.elapsedRealtime() - inactiveSinceMs < BUFFERING_BLUR_GRACE_MS
+
+    internal fun bufferingGraceAgeMs(): Long =
+        if (inactiveSinceMs > 0L) SystemClock.elapsedRealtime() - inactiveSinceMs else -1L
+
+    private fun invalidateAllCovers() {
         synchronized(smallStates) {
             smallStates.values.forEach { it.cover.invalidate() }
         }
@@ -89,8 +136,6 @@ internal object EmbeddedIslandAlbumCoverController {
             bigStates.values.forEach { it.target.invalidate() }
         }
     }
-
-    fun isPlaybackActive(): Boolean = playbackActive
 
     fun apply(host: ViewGroup, source: ImageView, smallIsland: Boolean): Boolean {
         val artwork = artworkFrom(source) ?: return false
@@ -162,6 +207,8 @@ internal object EmbeddedIslandAlbumCoverController {
             originalVisibility.forEach { (view, visibility) -> view.visibility = visibility }
             originalVisibility.clear()
         }
+        mainHandler.removeCallbacks(bufferingGraceExpiry)
+        inactiveSinceMs = 0L
         playbackActive = true
     }
 

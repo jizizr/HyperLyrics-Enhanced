@@ -328,9 +328,15 @@ object IslandExpandedMediaAmbientFlowHooker {
                     Action.DETACH -> Unit
                 }
                 if (action != Action.DETACH) {
-                    IslandAlbumCoverStyleHooker.onPlaybackStateChanged(
-                        requireNotNull(nativeApi).isPlaying(binder)
-                    )
+                    // 切歌瞬间新 binder 会短暂报 isPlaying=false（播放器尚未启动），而统一时间轴
+                    // 仍判定播放中；这里再上报 false 会把封面切成暂停视觉（封面置顶、模糊被盖住），
+                    // 且没有后续 true 事件把它拉回来。暂停统一由渲染层的合成播放态驱动。
+                    val playing = requireNotNull(nativeApi).isPlaying(binder)
+                    if (playing) {
+                        IslandAlbumCoverStyleHooker.onPlaybackStateChanged(true)
+                    } else if (BuildConfig.DEBUG) {
+                        HookLogger.d(TAG, "展开态媒体回调报告未播放，忽略: 暂停由渲染层驱动")
+                    }
                 }
             }.onFailure { error ->
                 MediaCardDiagnosticLogger.log(

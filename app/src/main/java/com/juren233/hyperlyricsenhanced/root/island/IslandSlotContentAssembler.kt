@@ -129,14 +129,21 @@ internal object IslandSlotContentAssembler {
     internal fun isNextSongPreviewContent(view: View): Boolean =
         synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.contains(view) }
 
+    internal fun hasAnyNextSongPreviewContent(): Boolean =
+        synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.isNotEmpty() }
+
     private fun markNextSongPreviewContent(view: View) {
         synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.add(view) }
     }
 
-    /** 预览结束/失败时释放标记；之后常规歌词才能重新写入该槽。 */
-    internal fun clearNextSongPreviewContent(views: Collection<View?>) {
+    /** 预览结束/失败时释放标记；返回是否真的释放了内容归属。 */
+    internal fun clearNextSongPreviewContent(views: Collection<View?>): Boolean {
         synchronized(nextSongPreviewContentViews) {
-            views.forEach { view -> if (view != null) nextSongPreviewContentViews.remove(view) }
+            var removed = false
+            views.forEach { view ->
+                if (view != null && nextSongPreviewContentViews.remove(view)) removed = true
+            }
+            return removed
         }
     }
 
@@ -626,11 +633,6 @@ internal object IslandSlotContentAssembler {
         playbackActive: Boolean
     ): Boolean {
         if (IslandContentUpdateCoordinator.deferContent(view)) return false
-        IslandShortLyricTransition.cancel(view)
-        IslandSeparatedLyricTransition.cancel(view)
-        IslandSeparatedLyricTransition.contentApplied(view, null)
-        configureView(view, prefs, config, mode = 5)
-        markNextSongPreviewContent(view)
         val signature = listOf(
             signaturePrefix,
             *signatureParts.toTypedArray(),
@@ -638,6 +640,18 @@ internal object IslandSlotContentAssembler {
         ).joinToString("|")
         val contentChanged = hasViewLineContentChanged(view, line)
         val viewContentLost = isLyricViewContentLost(view, line)
+        // 预览内容没变时保持原样：不取消转场、不重配样式，避免每次进度回调都重建样式签名。
+        if (isNextSongPreviewContent(view) &&
+            lastContentSignatures[view] == signature &&
+            !viewContentLost
+        ) {
+            return false
+        }
+        IslandShortLyricTransition.cancel(view)
+        IslandSeparatedLyricTransition.cancel(view)
+        IslandSeparatedLyricTransition.contentApplied(view, null)
+        configureView(view, prefs, config, mode = 5)
+        markNextSongPreviewContent(view)
         if (shouldSkipContentRefresh(false, lastContentSignatures[view], signature, viewContentLost)) return false
 
         applyContentUpdate(view, config, contentChanged = contentChanged) { target ->
