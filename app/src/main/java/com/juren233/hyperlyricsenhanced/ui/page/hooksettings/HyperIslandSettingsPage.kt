@@ -272,13 +272,31 @@ fun HyperIslandSettingsPage() {
             R.string.option_island_next_song_preview_half
         )
     }.map { stringResource(id = it) }
-    val nextSongPreviewPositionOptions = remember {
-        listOf(
-            R.string.option_island_next_song_preview_other_side,
-            R.string.option_island_next_song_preview_left,
-            R.string.option_island_next_song_preview_right
+    val nextSongPreviewPositionOptionValues = remember(lyricMode) {
+        if (lyricMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) {
+            listOf(
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT,
+            )
+        } else {
+            listOf(
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT,
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_RIGHT,
+            )
+        }
+    }
+    val nextSongPreviewPositionOptions = nextSongPreviewPositionOptionValues.map { value ->
+        stringResource(
+            id = when (value) {
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_OTHER_SIDE ->
+                    R.string.option_island_next_song_preview_other_side
+                RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT ->
+                    R.string.option_island_next_song_preview_left
+                else -> R.string.option_island_next_song_preview_right
+            }
         )
-    }.map { stringResource(id = it) }
+    }
     val nextSongPreviewWeightOptions = remember {
         listOf(
             R.string.option_island_next_song_preview_weight_top,
@@ -678,77 +696,83 @@ fun HyperIslandSettingsPage() {
                             }
                         }
                     }
-                    item(key = "next_song_preview") {
-                        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
-                            Column {
-                                OverlayDropdownPreference(
-                                    title = stringResource(id = R.string.title_island_next_song_preview),
-                                    summary = stringResource(id = R.string.summary_island_next_song_preview),
-                                    items = nextSongPreviewStyleOptions,
-                                    selectedIndex = nextSongPreviewStyle,
-                                    onSelectedIndexChange = {
-                                        nextSongPreviewStyle = it
-                                        saveConfig(
-                                            RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
-                                            it
-                                        )
-                                    }
-                                )
-                                AnimatedVisibility(
-                                    visible = nextSongPreviewStyle ==
-                                        RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
-                                ) {
-                                    Column {
-                                        OverlayDropdownPreference(
-                                            title = stringResource(
-                                                id = R.string.title_island_next_song_preview_position
-                                            ),
-                                            items = nextSongPreviewPositionOptions,
-                                            selectedIndex = nextSongPreviewPosition,
-                                            onSelectedIndexChange = {
-                                                nextSongPreviewPosition = it
-                                                saveConfig(
-                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
-                                                    it
-                                                )
-                                            }
-                                        )
-                                        OverlayDropdownPreference(
-                                            title = stringResource(
-                                                id = R.string.title_island_next_song_preview_weight
-                                            ),
-                                            items = nextSongPreviewWeightOptions,
-                                            selectedIndex = nextSongPreviewWeight,
-                                            onSelectedIndexChange = {
-                                                nextSongPreviewWeight = it
-                                                saveConfig(
-                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
-                                                    it
-                                                )
-                                            }
-                                        )
-                                    }
+                }
+                item(key = "next_song_preview") {
+                    Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+                        Column {
+                            OverlayDropdownPreference(
+                                title = stringResource(id = R.string.title_island_next_song_preview),
+                                summary = stringResource(id = R.string.summary_island_next_song_preview),
+                                items = nextSongPreviewStyleOptions,
+                                selectedIndex = nextSongPreviewStyle,
+                                onSelectedIndexChange = {
+                                    nextSongPreviewStyle = it
+                                    saveConfig(
+                                        RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_STYLE,
+                                        it
+                                    )
                                 }
-                                AnimatedVisibility(
-                                    visible = nextSongPreviewStyle ==
-                                        RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
-                                ) {
-                                    Column {
-                                        OverlayDropdownPreference(
-                                            title = stringResource(id = R.string.title_next_song_at_end),
-                                            summary = stringResource(id = R.string.summary_next_song_at_end),
-                                            items = nextSongDurationOptions,
-                                            selectedIndex = nextSongDurationSeconds - 1,
-                                            onSelectedIndexChange = {
-                                                nextSongDurationSeconds = it + 1
-                                                saveConfig(
-                                                    RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
-                                                    it + 1
-                                                )
-                                            }
-                                        )
-                                        SwitchPreference(
-                                            title = stringResource(id = R.string.title_force_next_song_at_end),
+                            )
+                            AnimatedVisibility(
+                                visible = nextSongPreviewStyle ==
+                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_HALF
+                            ) {
+                                Column {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(
+                                            id = R.string.title_island_next_song_preview_position
+                                        ),
+                                        items = nextSongPreviewPositionOptions,
+                                        selectedIndex = nextSongPreviewPositionOptionValues
+                                            .indexOfFirst { it == nextSongPreviewPosition }
+                                            .coerceAtLeast(0),
+                                        onSelectedIndexChange = { index ->
+                                            val value = nextSongPreviewPositionOptionValues
+                                                .getOrNull(index)
+                                                ?: RootConstants.ISLAND_NEXT_SONG_PREVIEW_POSITION_LEFT
+                                            nextSongPreviewPosition = value
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_POSITION,
+                                                value
+                                            )
+                                        }
+                                    )
+                                    OverlayDropdownPreference(
+                                        title = stringResource(
+                                            id = R.string.title_island_next_song_preview_weight
+                                        ),
+                                        items = nextSongPreviewWeightOptions,
+                                        selectedIndex = nextSongPreviewWeight,
+                                        onSelectedIndexChange = {
+                                            nextSongPreviewWeight = it
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_PREVIEW_WEIGHT,
+                                                it
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                            AnimatedVisibility(
+                                visible = nextSongPreviewStyle ==
+                                    RootConstants.ISLAND_NEXT_SONG_PREVIEW_STYLE_FULL
+                            ) {
+                                Column {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(id = R.string.title_next_song_at_end),
+                                        summary = stringResource(id = R.string.summary_next_song_at_end),
+                                        items = nextSongDurationOptions,
+                                        selectedIndex = nextSongDurationSeconds - 1,
+                                        onSelectedIndexChange = {
+                                            nextSongDurationSeconds = it + 1
+                                            saveConfig(
+                                                RootConstants.KEY_HOOK_ISLAND_NEXT_SONG_DURATION,
+                                                it + 1
+                                            )
+                                        }
+                                    )
+                                    SwitchPreference(
+                                        title = stringResource(id = R.string.title_force_next_song_at_end),
                                         summary = stringResource(id = R.string.summary_force_next_song_at_end),
                                         checked = forceNextSongAtEnd,
                                         onCheckedChange = {
@@ -756,9 +780,8 @@ fun HyperIslandSettingsPage() {
                                             saveConfig(RootConstants.KEY_HOOK_ISLAND_FORCE_NEXT_SONG_AT_END, it)
                                         }
                                     )
-                                    }
                                 }
-                                }
+                            }
                         }
                     }
                 }
