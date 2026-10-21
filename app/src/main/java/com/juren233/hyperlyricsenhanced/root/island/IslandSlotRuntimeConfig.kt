@@ -153,7 +153,7 @@ internal data class IslandSlotRuntimeConfig(
     val switchAnimRateFactor: Float
         get() = RootConstants.resolveSwitchAnimRateFactor(switchAnimRate, switchAnimCustomRate)
 
-    val styleSignature: String by lazy {
+    val styleSignature: String by lazy(LazyThreadSafetyMode.PUBLICATION) {
         listOf(
             activeMode,
             shortLyricSongInfo,
@@ -317,6 +317,33 @@ internal data class IslandSlotRuntimeConfig(
     }
 
     companion object {
+        private val configCacheLock = Any()
+        private var cachedConfig: IslandSlotRuntimeConfig? = null
+        private var cachedPrefs: SharedPreferences? = null
+        private var cachedVersion = -1L
+        private val configVersion = java.util.concurrent.atomic.AtomicLong(0L)
+
+        /** 设置、运行时覆盖或系统字重变化后调用；下一次 from() 会重建配置。 */
+        fun invalidate() {
+            configVersion.incrementAndGet()
+        }
+
+        fun from(prefs: SharedPreferences): IslandSlotRuntimeConfig {
+            val version = configVersion.get()
+            synchronized(configCacheLock) {
+                cachedConfig?.let { config ->
+                    if (cachedVersion == version && cachedPrefs === prefs) return config
+                }
+            }
+            val config = build(prefs)
+            synchronized(configCacheLock) {
+                cachedConfig = config
+                cachedPrefs = prefs
+                cachedVersion = version
+            }
+            return config
+        }
+
         /** 音频律动开启时，右槽注入内容与律动图标之间的固定间隔。 */
         internal const val RHYTHM_TRAILING_GAP_DP = 6
 
@@ -378,7 +405,7 @@ internal data class IslandSlotRuntimeConfig(
             }
         }
 
-        fun from(prefs: SharedPreferences): IslandSlotRuntimeConfig {
+        private fun build(prefs: SharedPreferences): IslandSlotRuntimeConfig {
             val dynamicLimitEnabled = runtimeBoolean(prefs,
                 RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT,
                 RootConstants.DEFAULT_HOOK_ISLAND_DYNAMIC_LIMIT)

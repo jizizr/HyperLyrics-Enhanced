@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -35,6 +36,8 @@ object MediaMetadataHelper {
     private const val ARTWORK_MAX_DIMENSION = 512
     private const val ARTWORK_MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
     private const val ARTWORK_FAILURE_RETRY_MS = 60_000L
+    private const val ARTWORK_PENDING_CACHE_TTL_MS = 5_000L
+    private const val SESSION_REFRESH_COOLDOWN_MS = 1_000L
     private const val ARTWORK_CONNECT_TIMEOUT_MS = 2_500
     private const val ARTWORK_READ_TIMEOUT_MS = 4_000
     private const val ARTWORK_LOG_TAG = "MediaArtworkResolver"
@@ -42,9 +45,10 @@ object MediaMetadataHelper {
     private val sessionLock = Any()
     private val artworkLock = Any()
     private val mediaInfoLock = Any()
-    private val mediaInfoCache = HashMap<String, MediaInfo>()
+    private val mediaInfoCache = HashMap<String, CachedMediaInfo>()
     private var mediaInfoGeneration = 0L
-    private val controllerCallbacks = HashMap<MediaController, MediaController.Callback>()
+    private val controllerCallbacks = HashMap<MediaSession.Token, ControllerCallback>()
+    private val lastSessionRefreshByPackage = HashMap<String, Long>()
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "HyperLyrics-MediaArtwork").apply { isDaemon = true }
@@ -127,22 +131,35 @@ object MediaMetadataHelper {
 
         val generation: Long
         synchronized(mediaInfoLock) {
-            mediaInfoCache[packageName]?.let { return it }
+            val cached = mediaInfoCache[packageName]
+            if (cached != null) {
+                if (cached.expiresAtMs == 0L || SystemClock.uptimeMillis() < cached.expiresAtMs) {
+                    return cached.info
+                }
+                mediaInfoCache.remove(packageName)
+            }
             generation = mediaInfoGeneration
         }
         return try {
-            val mediaInfo = findController(context, packageName)?.metadata?.toMediaInfo(
+            val result = findController(context, packageName)?.metadata?.toMediaInfo(
                 context = context.applicationContext ?: context,
                 packageName = packageName,
                 logger = logger,
             ) ?: return MediaInfo()
+            val mediaInfo = result.info
             if (mediaInfo.title.isNotBlank() || mediaInfo.artist.isNotBlank() ||
                 mediaInfo.album.isNotBlank() || mediaInfo.albumArt != null || mediaInfo.duration > 0L
             ) {
+                // 封面 URI 还没解析出结果时只缓存几秒，保证下载失败后还能按原有冷却重试。
+                val expiresAtMs = if (result.artworkPending) {
+                    SystemClock.uptimeMillis() + ARTWORK_PENDING_CACHE_TTL_MS
+                } else {
+                    0L
+                }
                 synchronized(mediaInfoLock) {
                     // 元数据回调可能在本次取值期间已经让缓存失效，此时不写回旧值。
                     if (mediaInfoGeneration == generation) {
-                        mediaInfoCache[packageName] = mediaInfo
+                        mediaInfoCache[packageName] = CachedMediaInfo(mediaInfo, expiresAtMs)
                     }
                 }
             }
@@ -372,8 +389,18 @@ object MediaMetadataHelper {
     private fun findController(context: Context, packageName: String): MediaController? {
         ensureSessionSnapshot(context)
         selectController(activeControllers, packageName)?.let { return it }
-        refreshSessionSnapshot()
+        refreshSessionSnapshotForPackage(packageName)
         return selectController(activeControllers, packageName)
+    }
+
+    private fun refreshSessionSnapshotForPackage(packageName: String) {
+        val now = SystemClock.elapsedRealtime()
+        synchronized(sessionLock) {
+            val previous = lastSessionRefreshByPackage[packageName]
+            if (previous != null && now - previous < SESSION_REFRESH_COOLDOWN_MS) return
+            lastSessionRefreshByPackage[packageName] = now
+        }
+        refreshSessionSnapshot()
     }
 
     private fun selectController(
@@ -427,39 +454,43 @@ object MediaMetadataHelper {
 
     private fun updateActiveControllers(controllers: List<MediaController>) {
         synchronized(sessionLock) {
+            val previousTokens = controllerCallbacks.keys.toHashSet()
             activeControllers = controllers
             syncControllerCallbacksLocked(controllers)
-            clearMediaInfoCache()
+            if (previousTokens != controllerCallbacks.keys) {
+                clearMediaInfoCache()
+            }
         }
     }
 
     private fun syncControllerCallbacksLocked(controllers: List<MediaController>) {
-        val iterator = controllerCallbacks.keys.iterator()
-        while (iterator.hasNext()) {
-            val controller = iterator.next()
-            if (controllers.none { it === controller }) {
-                val callback = controllerCallbacks[controller]
-                if (callback != null) {
-                    runCatching { controller.unregisterCallback(callback) }
-                }
-                iterator.remove()
-            }
-        }
+        val activeTokens = HashSet<MediaSession.Token>(controllers.size)
         controllers.forEach { controller ->
-            if (controllerCallbacks.keys.any { it === controller }) return@forEach
+            val token = runCatching { controller.sessionToken }.getOrNull() ?: return@forEach
+            activeTokens += token
+            if (controllerCallbacks.containsKey(token)) return@forEach
             val packageName = runCatching { controller.packageName }.getOrNull() ?: return@forEach
             val callback = object : MediaController.Callback() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     invalidateMediaInfo(packageName)
+                    notifyMediaInfoChanged()
                 }
 
                 override fun onSessionDestroyed() {
                     invalidateMediaInfo(packageName)
-                    synchronized(sessionLock) { controllerCallbacks.remove(controller) }
+                    synchronized(sessionLock) { controllerCallbacks.remove(token) }
                 }
             }
             if (runCatching { controller.registerCallback(callback, mainHandler) }.isSuccess) {
-                controllerCallbacks[controller] = callback
+                controllerCallbacks[token] = ControllerCallback(controller, callback)
+            }
+        }
+        val iterator = controllerCallbacks.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.key !in activeTokens) {
+                runCatching { entry.value.controller.unregisterCallback(entry.value.callback) }
+                iterator.remove()
             }
         }
     }
@@ -484,7 +515,7 @@ object MediaMetadataHelper {
         context: Context,
         packageName: String,
         logger: HyperLogger?,
-    ): MediaInfo {
+    ): MediaInfoResult {
         val snapshot = snapshot()
         val cacheKey = buildArtworkCacheKey(
             packageName = packageName,
@@ -502,13 +533,16 @@ object MediaMetadataHelper {
             artworkUri = snapshot.artworkUri,
             logger = logger,
         )
-        return MediaInfo(
-            title = snapshot.title,
-            artist = snapshot.artist,
-            album = snapshot.album,
-            albumArt = artwork?.bitmap,
-            duration = snapshot.duration,
-            artworkSource = artwork?.source ?: ArtworkSource.NONE,
+        return MediaInfoResult(
+            info = MediaInfo(
+                title = snapshot.title,
+                artist = snapshot.artist,
+                album = snapshot.album,
+                albumArt = artwork?.bitmap,
+                duration = snapshot.duration,
+                artworkSource = artwork?.source ?: ArtworkSource.NONE,
+            ),
+            artworkPending = artwork == null && !snapshot.artworkUri.isNullOrBlank(),
         )
     }
 
@@ -771,6 +805,13 @@ object MediaMetadataHelper {
         }
     }
 
+    private fun notifyMediaInfoChanged() {
+        val listener = artworkResolvedListener ?: return
+        mainHandler.post {
+            runCatching(listener)
+        }
+    }
+
     private fun notifyArtworkResolved() {
         clearMediaInfoCache()
         val listener = artworkResolvedListener ?: return
@@ -885,6 +926,21 @@ object MediaMetadataHelper {
         val duration: Long,
         val directArtwork: ResolvedArtwork?,
         val artworkUri: String?,
+    )
+
+    private data class MediaInfoResult(
+        val info: MediaInfo,
+        val artworkPending: Boolean,
+    )
+
+    private data class CachedMediaInfo(
+        val info: MediaInfo,
+        val expiresAtMs: Long,
+    )
+
+    private data class ControllerCallback(
+        val controller: MediaController,
+        val callback: MediaController.Callback,
     )
 
     private data class ResolvedArtwork(

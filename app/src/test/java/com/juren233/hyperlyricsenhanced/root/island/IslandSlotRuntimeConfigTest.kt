@@ -8,6 +8,8 @@ import com.juren233.hyperlyricsenhanced.common.IslandFontWeightMode
 import com.juren233.hyperlyricsenhanced.lyric.view.line.resolvePlainTextOffset
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -265,6 +267,27 @@ class IslandSlotRuntimeConfigTest {
         assertFalse(config.usesSpaceGateView)
         assertEquals(5, config.leftMode)
         assertEquals(6, config.rightMode)
+    }
+
+    @Test
+    fun `config is reused until invalidated`() {
+        val prefs = preferences(mapOf(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH to true))
+        val first = IslandSlotRuntimeConfig.from(prefs)
+        assertSame(first, IslandSlotRuntimeConfig.from(prefs))
+        IslandSlotRuntimeConfig.invalidate()
+        assertNotSame(first, IslandSlotRuntimeConfig.from(prefs))
+    }
+
+    @Test
+    fun `different preference sources do not share a cached config`() {
+        val first = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH to true,
+        )))
+        val second = IslandSlotRuntimeConfig.from(preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_DYNAMIC_WIDTH to false,
+        )))
+        assertTrue(first.dynamicWidthEnabled)
+        assertFalse(second.dynamicWidthEnabled)
     }
 
     private fun preferences(values: Map<String, Any>): SharedPreferences {

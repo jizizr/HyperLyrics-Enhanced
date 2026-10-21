@@ -17,6 +17,7 @@ internal object IslandRuntimePreferenceOverrides {
         } else {
             values[key] = value
         }
+        IslandSlotRuntimeConfig.invalidate()
     }
 
     fun contains(key: String): Boolean = values.containsKey(key)
@@ -31,5 +32,6 @@ internal object IslandRuntimePreferenceOverrides {
 
     fun clear() {
         values.clear()
+        IslandSlotRuntimeConfig.invalidate()
     }
 }

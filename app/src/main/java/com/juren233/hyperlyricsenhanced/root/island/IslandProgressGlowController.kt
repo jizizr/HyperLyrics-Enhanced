@@ -48,6 +48,19 @@ internal object IslandProgressGlowController {
         mediaInfo: MediaMetadataHelper.MediaInfo?,
         prefs: SharedPreferences
     ) {
+        if (mediaInfo == null) {
+            val now = SystemClock.uptimeMillis()
+            synchronized(lastUpdateByRoot) {
+                val previous = lastUpdateByRoot[rootView]
+                if (previous != null && now - previous < MIN_PROGRESS_UPDATE_INTERVAL_MS) return
+                lastUpdateByRoot[rootView] = now
+            }
+        } else {
+            synchronized(lastUpdateByRoot) {
+                lastUpdateByRoot[rootView] = SystemClock.uptimeMillis()
+            }
+        }
+
         if (!SystemUiEnhancementGate.isEnabled()) {
             clear(rootView)
             return
@@ -57,17 +70,6 @@ internal object IslandProgressGlowController {
             logStage(rootView, DiagnosticStage.DISABLED, "边缘光效进度条已禁用")
             clear(rootView)
             return
-        }
-
-        if (mediaInfo == null) {
-            val now = SystemClock.uptimeMillis()
-            val previous = synchronized(lastUpdateByRoot) { lastUpdateByRoot[rootView] }
-            if (previous != null && now - previous < MIN_PROGRESS_UPDATE_INTERVAL_MS) return
-            synchronized(lastUpdateByRoot) { lastUpdateByRoot[rootView] = now }
-        } else {
-            synchronized(lastUpdateByRoot) {
-                lastUpdateByRoot[rootView] = SystemClock.uptimeMillis()
-            }
         }
 
         val playbackProgress = resolvePlaybackProgress(

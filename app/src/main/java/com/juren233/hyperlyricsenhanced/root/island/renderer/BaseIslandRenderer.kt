@@ -22,6 +22,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandReattachAssistant
+import com.juren233.hyperlyricsenhanced.root.island.IslandReflect
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotContentAssembler
 import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandViewRegistry
@@ -40,6 +41,7 @@ object BaseIslandRenderer : IslandRenderer {
         retiredForReload = true
         mainHandler.removeCallbacksAndMessages(null)
         IslandContentUpdateCoordinator.release()
+        IslandReflect.clear()
     }
 
     private const val REFRESH_DEBOUNCE_MS = 32L

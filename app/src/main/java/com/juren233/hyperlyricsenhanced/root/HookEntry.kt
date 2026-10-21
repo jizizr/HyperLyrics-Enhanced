@@ -21,6 +21,7 @@ import com.juren233.hyperlyricsenhanced.root.island.IslandMusicWaveColorHooker
 import com.juren233.hyperlyricsenhanced.root.island.IslandProgressGlowController
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceOverrides
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
+import com.juren233.hyperlyricsenhanced.root.island.IslandSlotRuntimeConfig
 import com.juren233.hyperlyricsenhanced.root.island.IslandModuleRestoreHooker
 import com.juren233.hyperlyricsenhanced.root.island.SystemUIHookRegistry
 import com.juren233.hyperlyricsenhanced.root.island.IslandWidthHooker
@@ -560,6 +561,7 @@ class HookEntry : XposedModule() {
             }
             optionalRuntime("font_weight", { IslandSystemFontWeight.stop() }) {
                 IslandSystemFontWeight.start(app) {
+                    IslandSlotRuntimeConfig.invalidate()
                     if (IslandRuntimePreferenceReader.getFontWeightMode(prefs) ==
                         IslandFontWeightMode.SYSTEM
                     ) BaseIslandRenderer.refreshActiveIsland()
@@ -658,6 +660,7 @@ class HookEntry : XposedModule() {
             val listenerEpoch = runtimeEpoch
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (SystemUiHookLifetime.retired || listenerEpoch != runtimeEpoch) return@OnSharedPreferenceChangeListener
+                IslandSlotRuntimeConfig.invalidate()
                 if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG && key != null) {
                     val value = runCatching { prefs.all[key] }.getOrNull()
                     HookLogger.i(
