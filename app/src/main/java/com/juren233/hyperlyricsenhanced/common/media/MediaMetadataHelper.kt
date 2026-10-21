@@ -41,6 +41,10 @@ object MediaMetadataHelper {
 
     private val sessionLock = Any()
     private val artworkLock = Any()
+    private val mediaInfoLock = Any()
+    private val mediaInfoCache = HashMap<String, MediaInfo>()
+    private var mediaInfoGeneration = 0L
+    private val controllerCallbacks = HashMap<MediaController, MediaController.Callback>()
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "HyperLyrics-MediaArtwork").apply { isDaemon = true }
@@ -61,7 +65,7 @@ object MediaMetadataHelper {
     private var activeControllers: List<MediaController> = emptyList()
 
     private val activeSessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-        activeControllers = controllers.orEmpty()
+        updateActiveControllers(controllers.orEmpty())
     }
 
     data class MediaInfo(
@@ -121,12 +125,28 @@ object MediaMetadataHelper {
     fun getMediaInfo(context: Context, packageName: String, logger: HyperLogger? = null): MediaInfo {
         if (packageName.isEmpty()) return MediaInfo()
 
+        val generation: Long
+        synchronized(mediaInfoLock) {
+            mediaInfoCache[packageName]?.let { return it }
+            generation = mediaInfoGeneration
+        }
         return try {
-            findController(context, packageName)?.metadata?.toMediaInfo(
+            val mediaInfo = findController(context, packageName)?.metadata?.toMediaInfo(
                 context = context.applicationContext ?: context,
                 packageName = packageName,
                 logger = logger,
-            ) ?: MediaInfo()
+            ) ?: return MediaInfo()
+            if (mediaInfo.title.isNotBlank() || mediaInfo.artist.isNotBlank() ||
+                mediaInfo.album.isNotBlank() || mediaInfo.albumArt != null || mediaInfo.duration > 0L
+            ) {
+                synchronized(mediaInfoLock) {
+                    // 元数据回调可能在本次取值期间已经让缓存失效，此时不写回旧值。
+                    if (mediaInfoGeneration == generation) {
+                        mediaInfoCache[packageName] = mediaInfo
+                    }
+                }
+            }
+            mediaInfo
         } catch (e: Exception) {
             logger?.e("MediaMetadataHelper", "获取媒体信息失败 ($packageName)", e)
             MediaInfo()
@@ -140,6 +160,7 @@ object MediaMetadataHelper {
     fun clearArtworkResolution() {
         artworkGeneration.incrementAndGet()
         artworkResolvedListener = null
+        clearMediaInfoCache()
         synchronized(artworkLock) {
             artworkCache.clear()
             pendingArtworkRequests.clear()
@@ -380,7 +401,9 @@ object MediaMetadataHelper {
             if (mediaSessionManager != null) return
             val manager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
             mediaSessionManager = manager
-            activeControllers = runCatching { manager.getActiveSessions(null) }.getOrDefault(emptyList())
+            updateActiveControllers(
+                runCatching { manager.getActiveSessions(null) }.getOrDefault(emptyList())
+            )
             val registerListener: () -> Unit = {
                 runCatching {
                     manager.addOnActiveSessionsChangedListener(activeSessionsListener, null)
@@ -397,7 +420,64 @@ object MediaMetadataHelper {
 
     private fun refreshSessionSnapshot() {
         val manager = mediaSessionManager ?: return
-        activeControllers = runCatching { manager.getActiveSessions(null) }.getOrDefault(activeControllers)
+        updateActiveControllers(
+            runCatching { manager.getActiveSessions(null) }.getOrDefault(activeControllers)
+        )
+    }
+
+    private fun updateActiveControllers(controllers: List<MediaController>) {
+        synchronized(sessionLock) {
+            activeControllers = controllers
+            syncControllerCallbacksLocked(controllers)
+            clearMediaInfoCache()
+        }
+    }
+
+    private fun syncControllerCallbacksLocked(controllers: List<MediaController>) {
+        val iterator = controllerCallbacks.keys.iterator()
+        while (iterator.hasNext()) {
+            val controller = iterator.next()
+            if (controllers.none { it === controller }) {
+                val callback = controllerCallbacks[controller]
+                if (callback != null) {
+                    runCatching { controller.unregisterCallback(callback) }
+                }
+                iterator.remove()
+            }
+        }
+        controllers.forEach { controller ->
+            if (controllerCallbacks.keys.any { it === controller }) return@forEach
+            val packageName = runCatching { controller.packageName }.getOrNull() ?: return@forEach
+            val callback = object : MediaController.Callback() {
+                override fun onMetadataChanged(metadata: MediaMetadata?) {
+                    invalidateMediaInfo(packageName)
+                }
+
+                override fun onSessionDestroyed() {
+                    invalidateMediaInfo(packageName)
+                    synchronized(sessionLock) { controllerCallbacks.remove(controller) }
+                }
+            }
+            if (runCatching { controller.registerCallback(callback, mainHandler) }.isSuccess) {
+                controllerCallbacks[controller] = callback
+            }
+        }
+    }
+
+    private fun invalidateMediaInfo(packageName: String) {
+        synchronized(mediaInfoLock) {
+            mediaInfoCache.remove(packageName)
+            mediaInfoGeneration += 1
+        }
+    }
+
+    private fun clearMediaInfoCache() {
+        synchronized(mediaInfoLock) { clearMediaInfoCacheLocked() }
+    }
+
+    private fun clearMediaInfoCacheLocked() {
+        mediaInfoCache.clear()
+        mediaInfoGeneration += 1
     }
 
     private fun MediaMetadata.toMediaInfo(
@@ -692,6 +772,7 @@ object MediaMetadataHelper {
     }
 
     private fun notifyArtworkResolved() {
+        clearMediaInfoCache()
         val listener = artworkResolvedListener ?: return
         mainHandler.post {
             runCatching(listener)

@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.view.RichLyricLineView
 import com.juren233.hyperlyricsenhanced.lyric.view.SpaceGateRichLyricLineView
 import com.juren233.hyperlyricsenhanced.root.HookEntry
@@ -56,6 +57,9 @@ object BaseIslandRenderer : IslandRenderer {
     private val pauseRestoreRunnable = Runnable { commitDeferredNativeRestore() }
     private val nextSongPreviewActive = WeakHashMap<ViewGroup, NextSongPreviewState>()
     private val nextSongPreviewFailures = WeakHashMap<ViewGroup, String>()
+    private var lyricTimingSong: Song? = null
+    private var lyricTimingLastLineStart = -1L
+    private var lyricTimingLastSyllableEnd: Long? = null
 
     // 宿主仍附着但注入锚点丢失时重注入必败；连续失败计数用于区分暂态窗口
     // （fake/real 过渡、原生重排）与结构性失效，达到阈值才注销并触发重挂。
@@ -758,21 +762,11 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
-    private fun updateEndOfSongPreview(
-        cv: ViewGroup,
-        packageName: String,
-        prefs: android.content.SharedPreferences,
-        config: IslandSlotRuntimeConfig,
-        position: Long
-    ): Boolean {
-        val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
-        val song = LyriconDataBridge.currentSong
-        val duration = NextSongPreviewPolicy.resolveTrackDuration(
-            mediaDurationMs = mediaInfo.duration,
-            lyricDurationMs = song?.duration ?: -1L
-        )
-        val lastLyricStart = song?.lyrics?.maxOfOrNull { it.begin } ?: -1L
-        val lastSyllableEnd = song?.lyrics
+    private fun refreshLyricTimingCache(song: Song?) {
+        if (song === lyricTimingSong) return
+        lyricTimingSong = song
+        lyricTimingLastLineStart = song?.lyrics?.maxOfOrNull { it.begin } ?: -1L
+        lyricTimingLastSyllableEnd = song?.lyrics
             .orEmpty()
             .asSequence()
             .flatMap { line ->
@@ -786,17 +780,39 @@ object BaseIslandRenderer : IslandRenderer {
                 }
             }
             .maxOrNull()
-        val shouldShow = config.nextSongPreviewEnabled && NextSongPreviewPolicy.shouldShow(
-            positionMs = position,
-            durationMs = duration,
-            lastLyricStartMs = lastLyricStart,
-            lastSyllableEndMs = lastSyllableEnd,
-            previewDurationMs = config.nextSongDurationMs,
-            force = config.shouldForceNextSongPreview
-        )
+    }
+
+    private fun updateEndOfSongPreview(
+        cv: ViewGroup,
+        packageName: String,
+        prefs: android.content.SharedPreferences,
+        config: IslandSlotRuntimeConfig,
+        position: Long
+    ): Boolean {
         var previewState = synchronized(nextSongPreviewActive) {
             nextSongPreviewActive[cv]
         }
+        if (!config.nextSongPreviewEnabled && previewState == null) {
+            synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
+            return false
+        }
+
+        val song = LyriconDataBridge.currentSong
+        refreshLyricTimingCache(song)
+        // getMediaInfo 按包名缓存，元数据未变化时只有一次缓存读取。
+        val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
+        val duration = NextSongPreviewPolicy.resolveTrackDuration(
+            mediaDurationMs = mediaInfo.duration,
+            lyricDurationMs = song?.duration ?: -1L
+        )
+        val shouldShow = config.nextSongPreviewEnabled && NextSongPreviewPolicy.shouldShow(
+            positionMs = position,
+            durationMs = duration,
+            lastLyricStartMs = lyricTimingLastLineStart,
+            lastSyllableEndMs = lyricTimingLastSyllableEnd,
+            previewDurationMs = config.nextSongDurationMs,
+            force = config.shouldForceNextSongPreview
+        )
 
         if (!shouldShow) {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
