@@ -302,7 +302,8 @@ internal object IslandNativeTextCollisionGuard {
     }
 
     /**
-     * 仅在布局变化、歌曲变化或注入重建时遍历一次视图树，缓存与歌名匹配的原生 TextView。
+     * 仅在布局变化、歌曲变化或注入重建时遍历一次视图树，缓存原生 TextView；
+     * 匹配结果按文字变化惰性更新，避免原生标题晚于本次扫描改成歌名时漏判。
      */
     private fun scanCandidates(root: ViewGroup, state: State) {
         state.needsCandidateScan = false
@@ -322,9 +323,15 @@ internal object IslandNativeTextCollisionGuard {
             // Do not treat either half of the module's own virtual belt as native metadata.
             if (wrappers.any { it.view.get() === view }) continue
 
-            // 保留当前不可见的候选：原生标题可能只做 alpha 淡入，不会触发新的布局。
-            if (view is TextView && matchesTrackText(view.text?.toString().orEmpty(), trackText)) {
-                found += Candidate(WeakReference(view), view.text)
+            // 保留所有候选（含当前不可见、暂不匹配的）：原生标题可能只做 alpha 淡入，
+            // 或在扫描之后才改成新歌名，而这两种变化都不一定触发重新布局。
+            if (view is TextView) {
+                val text = view.text
+                found += Candidate(
+                    view = WeakReference(view),
+                    text = text,
+                    matches = matchesTrackText(text?.toString().orEmpty(), trackText),
+                )
             }
 
             val group = view as? ViewGroup ?: continue

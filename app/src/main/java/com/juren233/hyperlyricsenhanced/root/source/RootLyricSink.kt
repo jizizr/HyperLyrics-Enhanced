@@ -236,13 +236,12 @@ class RootLyricSink(
     override fun onPositionChanged(position: Long) {
         if (position == lastReceivedPosition) {
             logPositionDiagnostic(position, "dropped_duplicate")
-            MediaCardDiagnosticLogger.log(
+            MediaCardDiagnosticLogger.logLazy(
                 stage = "root_sink",
                 event = "position_dropped",
                 reason = "duplicate",
-                details = "position=$position,previous=$lastReceivedPosition",
                 positionSample = true,
-            )
+            ) { "position=$position,previous=$lastReceivedPosition" }
             return
         }
         logPositionDiagnostic(position, "accepted")
@@ -253,12 +252,11 @@ class RootLyricSink(
             renderer.updateLyricLine()
             NotificationMediaAodLyricHooker.onLyricChanged()
         }
-        MediaCardDiagnosticLogger.log(
+        MediaCardDiagnosticLogger.logLazy(
             stage = "root_sink",
             event = "position_processed",
-            details = "position=$position,lyricChanged=$lyricChanged,dispatch=${if (playbackActive) "throttled" else "immediate"}",
             positionSample = true,
-        )
+        ) { "position=$position,lyricChanged=$lyricChanged,dispatch=${if (playbackActive) "throttled" else "immediate"}" }
         if (playbackActive) {
             dispatchPositionThrottled(position)
         } else {
@@ -317,12 +315,11 @@ class RootLyricSink(
         lastDispatchedPosition = position
         pendingPosition = null
         renderer.updatePosition(position)
-        MediaCardDiagnosticLogger.log(
+        MediaCardDiagnosticLogger.logLazy(
             stage = "root_sink",
             event = "position_render_dispatched",
-            details = "position=$position,lastDispatched=$lastDispatchedPosition",
             positionSample = true,
-        )
+        ) { "position=$position,lastDispatched=$lastDispatchedPosition" }
     }
 
     private fun cancelPendingPositionDispatch() {

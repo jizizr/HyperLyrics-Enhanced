@@ -938,8 +938,8 @@ object MediaMetadataHelper {
     }
 
     /**
-     * 曲目身份签名：复用封面缓存的键规则，再附加是否已带直接封面。
-     * 标题被播放器逐句改写时签名保持不变，避免触发整岛重刷。
+     * 曲目身份签名：优先用 mediaId，其次用“歌手 + 时长”，两者都没有时才退回封面键规则。
+     * 比封面缓存键更宽松，避免缺专辑或时长为 0 的“歌词写进标题”播放器每句触发整岛重刷。
      */
     internal fun trackIdentitySignature(
         packageName: String,
@@ -950,14 +950,23 @@ object MediaMetadataHelper {
         duration: Long,
         hasDirectArtwork: Boolean,
     ): String? {
-        val identity = buildArtworkCacheKey(
-            packageName = packageName,
-            mediaId = mediaId,
-            title = title,
-            artist = artist,
-            album = album,
-            duration = duration,
-        ) ?: return null
+        val normalizedPackage = packageName.trim()
+        if (normalizedPackage.isEmpty()) return null
+        val normalizedArtist = normalizeArtworkIdentityText(artist)
+        val identity = when {
+            mediaId.isNotBlank() -> "$normalizedPackage\u001Fid\u001F${mediaId.trim()}"
+            // 时长基本能区分曲目；有歌手和时长时不再看标题和专辑。
+            duration > 0L && normalizedArtist.isNotEmpty() ->
+                "$normalizedPackage\u001Fad\u001F$normalizedArtist\u001F$duration"
+            else -> buildArtworkCacheKey(
+                packageName = packageName,
+                mediaId = mediaId,
+                title = title,
+                artist = artist,
+                album = album,
+                duration = duration,
+            )
+        } ?: return null
         return identity + if (hasDirectArtwork) "\u001Fart" else "\u001Fno-art"
     }
 

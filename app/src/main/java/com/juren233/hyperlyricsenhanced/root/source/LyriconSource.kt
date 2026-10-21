@@ -899,25 +899,25 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
     override fun onPositionChanged(position: Long) = dispatchCentralCallback(generation) {
         if (!hasActiveCentralPlayer()) {
             logCentralPositionDiagnostic(position, null, "dropped_no_active_player")
-            MediaCardDiagnosticLogger.log(
+            MediaCardDiagnosticLogger.logLazy(
                 stage = "central",
                 event = "position_dropped",
                 reason = "no_active_player",
-                details = "rawPosition=$position",
                 positionSample = true,
-            )
+            ) { "rawPosition=$position" }
             return@dispatchCentralCallback
         }
         val blocked = isCentralPlayerBlockedByMediaSession()
         if (blocked) {
             logCentralPositionDiagnostic(position, null, "dropped_no_active_media_session")
-            MediaCardDiagnosticLogger.log(
+            MediaCardDiagnosticLogger.logLazy(
                 stage = "central",
                 event = "position_dropped",
                 reason = "no_active_media_session",
-                details = "rawPosition=$position,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)}",
                 positionSample = true,
-            )
+            ) {
+                "rawPosition=$position,activePlayer=${MediaCardDiagnosticLogger.sanitize(activeCentralPlayerPackageName)}"
+            }
             return@dispatchCentralCallback
         }
         if (isBuiltInAppleCentralProviderActive() && !fallbackSongActive) {
@@ -947,13 +947,12 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
         }
         if (centralAppleProviderActive && fallbackSongActive) {
             logCentralPositionDiagnostic(position, null, "dropped_apple_fallback_active")
-            MediaCardDiagnosticLogger.log(
+            MediaCardDiagnosticLogger.logLazy(
                 stage = "central",
                 event = "position_dropped",
                 reason = "apple_fallback_active",
-                details = "rawPosition=$position",
                 positionSample = true,
-            )
+            ) { "rawPosition=$position" }
             return@dispatchCentralCallback
         }
         val adjustedPosition = (position - activeProviderDelayMs).coerceAtLeast(0L)
@@ -969,35 +968,32 @@ private fun createActivePlayerListener(generation: Long): ActivePlayerListener =
             val resolvedPosition = resolution.position
             if (resolvedPosition == null) {
                 logCentralPositionDiagnostic(position, null, "dropped_apple_resolution")
-                MediaCardDiagnosticLogger.log(
+                MediaCardDiagnosticLogger.logLazy(
                     stage = "central",
                     event = "position_dropped",
                     reason = "apple_resolution_null",
-                    details = "rawPosition=$position,adjustedPosition=$adjustedPosition",
                     positionSample = true,
-                )
+                ) { "rawPosition=$position,adjustedPosition=$adjustedPosition" }
                 return@dispatchCentralCallback
             }
             maybeCommitPendingOnlineTranslation(resolvedPosition)
             sink?.onPositionChanged(resolvedPosition)
             logCentralPositionDiagnostic(position, resolvedPosition, "forwarded_apple")
-            MediaCardDiagnosticLogger.log(
+            MediaCardDiagnosticLogger.logLazy(
                 stage = "central",
                 event = "position_forwarded",
-                details = "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true,sink=${sink != null}",
                 positionSample = true,
-            )
+            ) { "rawPosition=$position,forwardedPosition=$resolvedPosition,apple=true,sink=${sink != null}" }
             return@dispatchCentralCallback
         }
         maybeCommitPendingOnlineTranslation(adjustedPosition)
         sink?.onPositionChanged(adjustedPosition)
         logCentralPositionDiagnostic(position, adjustedPosition, "forwarded_non_apple")
-        MediaCardDiagnosticLogger.log(
+        MediaCardDiagnosticLogger.logLazy(
             stage = "central",
             event = "position_forwarded",
-            details = "rawPosition=$position,forwardedPosition=$adjustedPosition,apple=false,sink=${sink != null}",
             positionSample = true,
-        )
+        ) { "rawPosition=$position,forwardedPosition=$adjustedPosition,apple=false,sink=${sink != null}" }
     }
 
 

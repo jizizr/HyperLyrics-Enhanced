@@ -230,12 +230,11 @@ object LyriconDataBridge : StateResetter {
     fun updatePosition(position: Long): Boolean {
         playbackPositionEstimator.update(position, monotonicTimeMs())
         val changed = applyPosition(position)
-        MediaCardDiagnosticLogger.log(
+        MediaCardDiagnosticLogger.logLazy(
             stage = "bridge",
             event = "position_applied",
-            details = "position=$position,lyricChanged=$changed",
             positionSample = true,
-        )
+        ) { "position=$position,lyricChanged=$changed" }
         return changed
     }
 

@@ -131,13 +131,12 @@ object BaseIslandRenderer : IslandRenderer {
                 delay,
             )
         }
-        DisplayDiagnosticLogger.log(
+        DisplayDiagnosticLogger.logLazy(
             channel = "ISLAND",
             result = "pending",
             reason = "screen_on_refresh_scheduled",
-            extra = "attempts=${SCREEN_ON_REFRESH_DELAYS_MS.size}",
             dedupeKey = "ISLAND/screen_on",
-        )
+        ) { "attempts=${SCREEN_ON_REFRESH_DELAYS_MS.size}" }
     }
 
     fun onScreenNonInteractive() {
@@ -158,7 +157,7 @@ object BaseIslandRenderer : IslandRenderer {
         // to re-apply their current line, which is the visible "两侧内容不断刷新更新" churn.
         val fullRefresh = fullRefreshPending || !refreshWidth
         if (BuildConfig.DEBUG) {
-            HookLogger.d("IslandDynamicLimit", "刷新类型: full=$fullRefresh width=$refreshWidth")
+            HookLogger.dLazy("IslandDynamicLimit") { "刷新类型: full=$fullRefresh width=$refreshWidth" }
         }
         dynamicWidthRefreshPending = false
         fullRefreshPending = false
@@ -235,26 +234,26 @@ object BaseIslandRenderer : IslandRenderer {
                         "hostWidth=$width, hostHeight=$height") to
                         "$injected|$shown|$attached|$visibility|${width > 0}|${height > 0}"
                 }.getOrDefault("hostState=unavailable" to "unavailable") else "" to ""
-                DisplayDiagnosticLogger.log(
+                DisplayDiagnosticLogger.logLazy(
                     channel = "ISLAND",
                     result = if (injected) "present" else "skipped",
                     reason = if (injected) "injected_view_present" else "injection_unavailable",
-                    extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
-                        "playbackActive=$playbackActive, ${hostDiagnostic.first}",
                     dedupeKey = "ISLAND/refresh",
                     infoState = hostDiagnostic.second,
-                )
+                ) {
+                    "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
+                        "playbackActive=$playbackActive, ${hostDiagnostic.first}"
+                }
             }
         }
 
-        HookLogger.d("BaseIslandRenderer", "已刷新活动媒体岛: 数量=${activeViews.size}")
-        DisplayDiagnosticLogger.log(
+        HookLogger.dLazy("BaseIslandRenderer") { "已刷新活动媒体岛: 数量=${activeViews.size}" }
+        DisplayDiagnosticLogger.logLazy(
             channel = "ISLAND",
             result = "pending",
             reason = "refresh_scheduled",
-            extra = "targetViews=${activeViews.size}, playbackActive=$playbackActive",
             dedupeKey = "ISLAND/refresh_pending",
-        )
+        ) { "targetViews=${activeViews.size}, playbackActive=$playbackActive" }
     }
 
     override fun updateLyricLine() {
@@ -328,23 +327,23 @@ object BaseIslandRenderer : IslandRenderer {
                             } else {
                                 injectionRecoveryFailures[cv] = consecutiveFailures
                             }
-                            DisplayDiagnosticLogger.log(
+                            DisplayDiagnosticLogger.logLazy(
                                 channel = "ISLAND",
                                 result = "skipped",
                                 reason = "injected_view_recovery_failed",
-                                extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
-                                    "consecutiveFailures=$consecutiveFailures",
                                 dedupeKey = "ISLAND/line",
-                            )
+                            ) {
+                                "targetViews=${activeViews.size}, injectionChanged=$injectionChanged, " +
+                                    "consecutiveFailures=$consecutiveFailures"
+                            }
                             return@post
                         }
-                        DisplayDiagnosticLogger.log(
+                        DisplayDiagnosticLogger.logLazy(
                             channel = "ISLAND",
                             result = "shown",
                             reason = "injected_view_recovered",
-                            extra = "targetViews=${activeViews.size}, injectionChanged=$injectionChanged",
                             dedupeKey = "ISLAND/line",
-                        )
+                        ) { "targetViews=${activeViews.size}, injectionChanged=$injectionChanged" }
                     }
                     val contentChanged = updateLyricContentForView(cv, prefs, config)
                     if (injectionRecovered) {
@@ -354,13 +353,12 @@ object BaseIslandRenderer : IslandRenderer {
                     }
                     // 任意健康路径（重注入成功或视图本就存在）都清零暂态失败计数。
                     injectionRecoveryFailures.remove(cv)
-                    DisplayDiagnosticLogger.log(
+                    DisplayDiagnosticLogger.logLazy(
                         channel = "ISLAND",
                         result = "shown",
                         reason = "lyric_line_updated",
-                        extra = "targetViews=${activeViews.size}, playbackActive=$playbackActive",
                         dedupeKey = "ISLAND/line",
-                    )
+                    ) { "targetViews=${activeViews.size}, playbackActive=$playbackActive" }
                 }
             }
     }
@@ -588,6 +586,7 @@ object BaseIslandRenderer : IslandRenderer {
         }
         IslandViewRegistry.releaseForReload()
         nextSongPreviewActive.clear()
+        IslandSlotContentAssembler.clearAllNextSongPreviewContent()
         injectionRecoveryFailures.clear()
     }
 
@@ -764,6 +763,16 @@ object BaseIslandRenderer : IslandRenderer {
         )
     }
 
+    /** 预览结束或无法显示时，先解除槽位内容归属，常规歌词才能写回。 */
+    private fun clearNextSongPreviewContentMarkers(cv: ViewGroup) {
+        IslandSlotContentAssembler.clearNextSongPreviewContent(
+            listOf(
+                cv.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
+                cv.findViewWithTag(IslandProbeUtils.RIGHT_TEST_VIEW_TAG),
+            )
+        )
+    }
+
     private fun refreshLyricTimingCache(song: Song?) {
         if (song === lyricTimingSong) return
         lyricTimingSong = song
@@ -796,6 +805,7 @@ object BaseIslandRenderer : IslandRenderer {
         }
         if (!config.nextSongPreviewEnabled && previewState == null) {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
+            clearNextSongPreviewContentMarkers(cv)
             return false
         }
 
@@ -818,6 +828,7 @@ object BaseIslandRenderer : IslandRenderer {
 
         if (!shouldShow) {
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
+            clearNextSongPreviewContentMarkers(cv)
             if (previewState == null) return false
             synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
             if (BuildConfig.DEBUG) {
@@ -856,6 +867,8 @@ object BaseIslandRenderer : IslandRenderer {
                 state.targetIsLeft == expectedTargetIsLeft
         } == true
         if (!previewStateMatches) {
+            // 样式/目标侧变更会换槽：旧槽的预览归属必须先释放，否则常规歌词写不回去。
+            clearNextSongPreviewContentMarkers(cv)
             synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
             previewState = null
         } else if (
@@ -884,6 +897,7 @@ object BaseIslandRenderer : IslandRenderer {
                             "当前歌曲=${mediaInfo.title}",
                     )
                 }
+                clearNextSongPreviewContentMarkers(cv)
                 return false
             }
             synchronized(nextSongPreviewFailures) { nextSongPreviewFailures.remove(cv) }
@@ -924,9 +938,11 @@ object BaseIslandRenderer : IslandRenderer {
                 config = config,
                 mediaInfo = mediaInfo
             )
-            if (previewStateMatches) return true
+            // 预览必须保持到切歌：每次刷新都重申预览内容并重新认领槽位，
+            // 视图被重建后也能自愈（内容未变时签名检查会直接跳过）。
             val target = cv.findViewWithTag<View>(targetTag) ?: run {
                 synchronized(nextSongPreviewActive) { nextSongPreviewActive.remove(cv) }
+                clearNextSongPreviewContentMarkers(cv)
                 return false
             }
             IslandSlotContentAssembler.applyHalfNextSongPreviewContent(

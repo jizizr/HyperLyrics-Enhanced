@@ -11,6 +11,21 @@ object DisplayDiagnosticLogger {
     private val lastSignatures = ConcurrentHashMap<String, String>()
     private val infoDecisions = DiagnosticDecisionGate(minIntervalMs = 2_000L)
 
+    /**
+     * Release 下直接返回；extra 里的视图/状态字符串只在 Debug 构建求值。
+     */
+    inline fun logLazy(
+        channel: String,
+        result: String,
+        reason: String,
+        dedupeKey: String = channel,
+        infoState: String = "",
+        extra: () -> String,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        log(channel, result, reason, extra(), dedupeKey, infoState)
+    }
+
     fun log(
         channel: String,
         result: String,

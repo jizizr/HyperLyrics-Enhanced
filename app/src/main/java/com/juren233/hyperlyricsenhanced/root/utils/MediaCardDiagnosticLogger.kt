@@ -22,6 +22,20 @@ object MediaCardDiagnosticLogger {
     private val sequence = AtomicLong(0)
     private val lastPositionSampleAt = ConcurrentHashMap<String, Long>()
 
+    /**
+     * Release 下直接返回，参数字符串不会预先拼接；高频进度路径必须走这个入口。
+     */
+    inline fun logLazy(
+        stage: String,
+        event: String,
+        reason: String? = null,
+        positionSample: Boolean = false,
+        details: () -> String,
+    ) {
+        if (!BuildConfig.DEBUG) return
+        log(stage, event, reason, details(), positionSample)
+    }
+
     fun log(
         stage: String,
         event: String,

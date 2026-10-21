@@ -43,6 +43,12 @@ object HookLogger : HyperLogger {
         runCatching { module?.log(Log.DEBUG, null, finalMsg) }
     }
 
+    /** Release 下不拼接消息字符串；高频调用点用这个入口。 */
+    inline fun dLazy(tag: String, message: () -> String) {
+        if (!BuildConfig.DEBUG) return
+        d(tag, message())
+    }
+
     override fun i(tag: String, msg: String) {
         val finalMsg = format(tag, msg)
         runCatching { Log.i(TAG, finalMsg) }

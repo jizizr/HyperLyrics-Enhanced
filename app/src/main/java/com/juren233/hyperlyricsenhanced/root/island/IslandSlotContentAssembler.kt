@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.util.TypedValue
 import android.view.View
+import android.view.ViewGroup
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.common.RootConstants
@@ -44,6 +45,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.LyricStyleHelper
 import com.juren233.hyperlyricsenhanced.root.utils.TranslationHelper
 import java.io.File
+import java.util.Collections
 import java.util.WeakHashMap
 
 internal object IslandSlotContentAssembler {
@@ -77,6 +79,10 @@ internal object IslandSlotContentAssembler {
     private var splitMeasureEnvCache: Pair<SplitMeasureKey, SplitMeasureEnv>? = null
 
     private val lastContentSignatures = WeakHashMap<View, String>()
+    // 下首预览已写入内容的槽位。预览期间常规内容（含 force 刷新、形态提交、动画落地）
+    // 一律不得覆盖它；按 View 记录，避免预览登记表按宿主 key 查找时因宿主身份不一致而漏拦。
+    private val nextSongPreviewContentViews =
+        Collections.newSetFromMap(WeakHashMap<View, Boolean>())
     private val lastStyleSignatures = WeakHashMap<View, String>()
     // Keep the applied value across global invalidations so equal refreshes do not rebind style.
     private val lastAppliedStyles = WeakHashMap<View, LyricViewStyle>()
@@ -119,6 +125,46 @@ internal object IslandSlotContentAssembler {
         followStatusBarColor(view, false)
         synchronized(lastLyricAvailability) { lastLyricAvailability.remove(view) }
     }
+
+    internal fun isNextSongPreviewContent(view: View): Boolean =
+        synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.contains(view) }
+
+    private fun markNextSongPreviewContent(view: View) {
+        synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.add(view) }
+    }
+
+    /** 预览结束/失败时释放标记；之后常规歌词才能重新写入该槽。 */
+    internal fun clearNextSongPreviewContent(views: Collection<View?>) {
+        synchronized(nextSongPreviewContentViews) {
+            views.forEach { view -> if (view != null) nextSongPreviewContentViews.remove(view) }
+        }
+    }
+
+    internal fun clearAllNextSongPreviewContent() {
+        synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.clear() }
+    }
+
+    /** 同一宿主另一槽是否仍持有预览内容；有成对形态提交时必须跳过，避免动画遮住预览。 */
+    private fun hasNextSongPreviewContentInHost(view: View): Boolean {
+        if (synchronized(nextSongPreviewContentViews) { nextSongPreviewContentViews.isEmpty() }) {
+            return false
+        }
+        var parent = view.parent as? ViewGroup
+        while (parent != null) {
+            val left = parent.findViewWithTag<View>(IslandProbeUtils.LEFT_TEST_VIEW_TAG)
+            val right = parent.findViewWithTag<View>(IslandProbeUtils.RIGHT_TEST_VIEW_TAG)
+            if (left != null && right != null) {
+                return isNextSongPreviewContent(left) || isNextSongPreviewContent(right)
+            }
+            parent = parent.parent as? ViewGroup
+        }
+        return false
+    }
+
+    private fun previewBlockCaller(): String =
+        Throwable().stackTrace.drop(2).take(4).joinToString(" <- ") {
+            "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
+        }
 
     fun configureView(
         view: View,
@@ -345,11 +391,24 @@ internal object IslandSlotContentAssembler {
         // Cancelling an older YoYo bind can synchronously request native layout. Its
         // reentrant refresh must not interrupt the pair that is being committed now.
         if (IslandContentUpdateCoordinator.deferContent(view)) return false
+        if (isNextSongPreviewContent(view)) {
+            // 预览内容必须保持到切歌；任何常规/强制刷新都不得改写这个槽。
+            if (BuildConfig.DEBUG) {
+                HookLogger.i(
+                    "IslandSlotContentAssembler",
+                    "[NextPreviewGuardDiag] blocked tag=${view.tag} force=$force mode=$mode " +
+                        "cached=${lastContentSignatures[view]?.take(24)}, caller=${previewBlockCaller()}"
+                )
+            }
+            return false
+        }
         if (IslandSeparatedLyricTransition.isApplying(view) && !separatedMorphCommit) return false
         val independentSlots = usesIndependentLyricSlots(view, prefs, config)
+        // 同一宿主另一槽仍是预览内容时，成对形态提交会在落地时把当前歌词画回预览槽。
+        val previewContentInHost = hasNextSongPreviewContentInHost(view)
         if (!IslandSeparatedLyricTransition.isApplying(view)) {
             val previewEnabled = isNextLinePreviewEnabled(prefs, config)
-            if (config.isSeparatedMode && mode == 7 && !suppressAnimation &&
+            if (config.isSeparatedMode && mode == 7 && !suppressAnimation && !previewContentInHost &&
                 (config.lyricAnimationEnabled || previewEnabled)
             ) {
                 applyPlaybackActive(view, playbackActive)
@@ -375,7 +434,7 @@ internal object IslandSlotContentAssembler {
         if (!IslandShortLyricTransition.isApplying(view)) {
             val previewEnabled = config.isFullIslandMode && isNextLinePreviewEnabled(prefs, config)
             val canTransitionRoles = config.isFullIslandMode && (config.shortLyricSongInfo || config.nextLineOnRight) &&
-                mode == 7 && !suppressAnimation &&
+                mode == 7 && !suppressAnimation && !previewContentInHost &&
                 (config.lyricAnimationEnabled || previewEnabled) &&
                 hasVisibleLyricContent(LyriconDataBridge.currentLyricLine) &&
                 !isInterludeIndicatorLine(LyriconDataBridge.currentLyricLine)
@@ -571,6 +630,7 @@ internal object IslandSlotContentAssembler {
         IslandSeparatedLyricTransition.cancel(view)
         IslandSeparatedLyricTransition.contentApplied(view, null)
         configureView(view, prefs, config, mode = 5)
+        markNextSongPreviewContent(view)
         val signature = listOf(
             signaturePrefix,
             *signatureParts.toTypedArray(),
@@ -880,6 +940,7 @@ internal object IslandSlotContentAssembler {
         playbackActive: Boolean,
         suppressAnimation: Boolean
     ): Boolean {
+        if (isNextSongPreviewContent(view)) return false
         val sourceLine = lineOverride ?: buildSlotLyricLine(
             view = view,
             prefs = prefs,
