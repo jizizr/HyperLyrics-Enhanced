@@ -17,6 +17,7 @@ import io.github.libxposed.api.XposedInterface.Chain
 import io.github.libxposed.api.XposedInterface.Hooker
 import io.github.libxposed.api.XposedModule
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
 @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
@@ -30,6 +31,16 @@ object HookIslandGlow {
         java.util.Collections.newSetFromMap(java.util.WeakHashMap<ClassLoader, Boolean>())
     )
     private val lastGlowEnabledByView = WeakHashMap<View, Boolean>()
+
+    /** 同一媒体身份 + 封面对象复用已经解析好的高亮色字符串。 */
+    @Volatile
+    private var cachedHighlightColorKey: String? = null
+    @Volatile
+    private var cachedHighlightColor: String? = null
+    @Volatile
+    private var cachedHighlightBitmap: WeakReference<Bitmap>? = null
+    @Volatile
+    private var cachedHighlightBitmapGeneration = 0
 
     private val prefs: SharedPreferences?
         get() = if (::module.isInitialized) (module as? HookEntry)?.prefs else null
@@ -115,6 +126,16 @@ object HookIslandGlow {
                 diagnosticSource = "island_host_glow"
             )
             val useGradient = IslandProgressColorMode.usesCoverGradient(colorMode)
+            val colorCacheKey = "$mediaColorKey|$useGradient"
+            val generationId = albumArt.generationId
+            cachedHighlightColor?.let { cached ->
+                if (colorCacheKey == cachedHighlightColorKey &&
+                    cachedHighlightBitmap?.get() === albumArt &&
+                    cachedHighlightBitmapGeneration == generationId
+                ) {
+                    return@runCatching cached
+                }
+            }
             val color = runCatching {
                 CoverColorHelper.resolveTextColors(albumArt, useGradient, mediaColorKey)
                     ?.colors
@@ -124,7 +145,12 @@ object HookIslandGlow {
                 ?: CoverColorHelper.fallbackArtworkColor(albumArt)
                 ?: return@runCatching null
 
-            String.format("#%08X", color)
+            val resolved = String.format("#%08X", color)
+            cachedHighlightColorKey = colorCacheKey
+            cachedHighlightBitmap = WeakReference(albumArt)
+            cachedHighlightBitmapGeneration = generationId
+            cachedHighlightColor = resolved
+            resolved
         }.onFailure { e ->
             HookLogger.e(TAG, "解析媒体岛光效颜色失败", e)
         }.getOrNull()
@@ -143,6 +169,12 @@ object HookIslandGlow {
 
             val tickerData = getTickerData.invoke(receiver) as? String ?: return
             if (tickerData.isBlank()) return
+            // 颜色没变时跳过整段 JSON 解析/序列化；两种常见分隔格式都兼容。
+            if (tickerData.contains("\"highlightColor\":\"$color\"") ||
+                tickerData.contains("\"highlightColor\": \"$color\"")
+            ) {
+                return
+            }
 
             val json = JSONObject(tickerData)
             json.put("highlightColor", color)
