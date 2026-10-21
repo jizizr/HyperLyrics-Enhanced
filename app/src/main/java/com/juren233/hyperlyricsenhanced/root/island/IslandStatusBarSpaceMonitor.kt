@@ -110,10 +110,17 @@ internal object IslandStatusBarSpaceMonitor {
 
         val listener = ViewTreeObserver.OnGlobalLayoutListener {
             val view = reference.get() ?: return@OnGlobalLayoutListener
+            val enabled = IslandDynamicWidthLimiter.isEnabled()
+            if (!enabled) {
+                // 功能关闭时不做整棵状态栏树的遍历，只清掉可能残留的待定刷新。
+                if (settlePending) settlePending = false
+                view.removeCallbacks(settleCheck)
+                return@OnGlobalLayoutListener
+            }
             val current = observation(view)
             when (
                 IslandDynamicLimitRefreshPolicy.decide(
-                    enabled = IslandDynamicWidthLimiter.isEnabled(),
+                    enabled = enabled,
                     current = current,
                     baseline = baseline,
                     islandWidthSettling = IslandDynamicWidthLimiter.isWidthSettling(),

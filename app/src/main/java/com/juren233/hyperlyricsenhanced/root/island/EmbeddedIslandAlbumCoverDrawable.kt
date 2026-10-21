@@ -77,6 +77,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     private var renderNodeRecoveryCount = 0
     private var lastDrawDiagnostic: String? = null
     private var appliedAlpha: Int = 255
+    private var appliedColorFilter: ColorFilter? = null
     private var drawCount = 0L
     private var lastDrawUptimeMs = 0L
     private var recycledBitmapLogged = false
@@ -813,6 +814,7 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     }
 
     override fun setAlpha(alpha: Int) {
+        if (appliedAlpha == alpha) return
         appliedAlpha = alpha
         bitmapPaint.alpha = alpha
         transitionPaint.alpha = alpha
@@ -825,6 +827,8 @@ internal class EmbeddedIslandAlbumCoverDrawable(
     }
 
     override fun setColorFilter(colorFilter: ColorFilter?) {
+        if (appliedColorFilter === colorFilter) return
+        appliedColorFilter = colorFilter
         bitmapPaint.colorFilter = colorFilter
         transitionPaint.colorFilter = colorFilter
         transitionRenderNodeReady = recordTransitionRenderNode(transitionTextureBitmap)
