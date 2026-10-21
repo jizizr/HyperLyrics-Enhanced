@@ -506,7 +506,8 @@ internal class TextDrawer {
         ) {
             cachedSolidHighlightShader = LinearGradient(
                 0f, 0f, 1f, 0f,
-                intArrayOf(color, color, Color.TRANSPARENT),
+                // 尾色保留同色 RGB、只把透明度降到 0；用 Color.TRANSPARENT 会让软边插值成黑色。
+                intArrayOf(color, color, color and 0x00FFFFFF),
                 floatArrayOf(0f, edgePosition, 1f),
                 Shader.TileMode.CLAMP
             )

@@ -37,6 +37,7 @@ object MediaMetadataHelper {
     private const val ARTWORK_MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
     private const val ARTWORK_FAILURE_RETRY_MS = 60_000L
     private const val ARTWORK_PENDING_CACHE_TTL_MS = 5_000L
+    private const val MEDIA_INFO_CACHE_TTL_MS = 3_000L
     private const val SESSION_REFRESH_COOLDOWN_MS = 1_000L
     private const val ARTWORK_CONNECT_TIMEOUT_MS = 2_500
     private const val ARTWORK_READ_TIMEOUT_MS = 4_000
@@ -137,7 +138,7 @@ object MediaMetadataHelper {
         synchronized(mediaInfoLock) {
             val cached = mediaInfoCache[packageName]
             if (cached != null) {
-                if (cached.expiresAtMs == 0L || SystemClock.uptimeMillis() < cached.expiresAtMs) {
+                if (SystemClock.uptimeMillis() < cached.expiresAtMs) {
                     return cached.info
                 }
                 mediaInfoCache.remove(packageName)
@@ -154,11 +155,11 @@ object MediaMetadataHelper {
             if (mediaInfo.title.isNotBlank() || mediaInfo.artist.isNotBlank() ||
                 mediaInfo.album.isNotBlank() || mediaInfo.albumArt != null || mediaInfo.duration > 0L
             ) {
-                // 封面 URI 还没解析出结果时只缓存几秒，保证下载失败后还能按原有冷却重试。
-                val expiresAtMs = if (result.artworkPending) {
-                    SystemClock.uptimeMillis() + ARTWORK_PENDING_CACHE_TTL_MS
+                // 兜底过期时间：回调漏报或同包多会话切换时，避免缓存一直停在旧歌。
+                val expiresAtMs = SystemClock.uptimeMillis() + if (result.artworkPending) {
+                    ARTWORK_PENDING_CACHE_TTL_MS
                 } else {
-                    0L
+                    MEDIA_INFO_CACHE_TTL_MS
                 }
                 synchronized(mediaInfoLock) {
                     // 元数据回调可能在本次取值期间已经让缓存失效，此时不写回旧值。
@@ -186,14 +187,34 @@ object MediaMetadataHelper {
         artworkGeneration.incrementAndGet()
         artworkResolvedListener = null
         mediaInfoChangedListener = null
-        clearMediaInfoCache()
-        synchronized(sessionLock) { lastTrackSignatureByPackage.clear() }
+        releaseSessionObservers()
         synchronized(artworkLock) {
             artworkCache.clear()
             pendingArtworkRequests.clear()
             failedArtworkRequests.clear()
             artworkDiagnosticStateByPackage.clear()
         }
+    }
+
+    /**
+     * 注销会话观察者并整体复位快照，让下次调用重新初始化。
+     * 只注销回调而不置空 mediaSessionManager 时，ensureSessionSnapshot 会提前返回，缓存将不再失效。
+     */
+    private fun releaseSessionObservers() {
+        synchronized(sessionLock) {
+            controllerCallbacks.values.forEach { entry ->
+                runCatching { entry.controller.unregisterCallback(entry.callback) }
+            }
+            controllerCallbacks.clear()
+            mediaSessionManager?.let { manager ->
+                runCatching { manager.removeOnActiveSessionsChangedListener(activeSessionsListener) }
+            }
+            mediaSessionManager = null
+            activeControllers = emptyList()
+            lastSessionRefreshByPackage.clear()
+            lastTrackSignatureByPackage.clear()
+        }
+        clearMediaInfoCache()
     }
 
     fun currentArtworkCaptureToken(
@@ -442,8 +463,11 @@ object MediaMetadataHelper {
                 runCatching { manager.getActiveSessions(null) }.getOrDefault(emptyList())
             )
             val registerListener: () -> Unit = {
-                runCatching {
-                    manager.addOnActiveSessionsChangedListener(activeSessionsListener, null)
+                // 释放可能与已排队的注册交错，只在快照仍是本次初始化时登记监听。
+                if (mediaSessionManager === manager) {
+                    runCatching {
+                        manager.addOnActiveSessionsChangedListener(activeSessionsListener, null)
+                    }
                 }
                 Unit
             }
@@ -481,6 +505,19 @@ object MediaMetadataHelper {
             if (controllerCallbacks.containsKey(token)) return@forEach
             val packageName = runCatching { controller.packageName }.getOrNull() ?: return@forEach
             val callback = object : MediaController.Callback() {
+                var lastPlaying = runCatching {
+                    controller.playbackState?.state == PlaybackState.STATE_PLAYING
+                }.getOrDefault(false)
+
+                override fun onPlaybackStateChanged(state: PlaybackState?) {
+                    // 部分播放器会周期性上报位置，只在播放态真正翻转时失效缓存。
+                    val playing = state?.state == PlaybackState.STATE_PLAYING
+                    if (playing != lastPlaying) {
+                        lastPlaying = playing
+                        invalidateMediaInfo(packageName)
+                    }
+                }
+
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     invalidateMediaInfo(packageName)
                     val snapshot = metadata?.let { runCatching { it.snapshot() }.getOrNull() }
