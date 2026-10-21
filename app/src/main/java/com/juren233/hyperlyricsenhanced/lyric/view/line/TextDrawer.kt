@@ -28,9 +28,31 @@ internal class TextDrawer {
     private var hlColors = intArrayOf(Color.WHITE)
 
     var cjkLiftFactor = DEFAULT_CJK_LIFT_FACTOR
+        set(value) {
+            field = value
+            rebuildMotionSpecs()
+        }
+
     var cjkWaveFactor = DEFAULT_CJK_WAVE_FACTOR
+        set(value) {
+            field = value
+            rebuildMotionSpecs()
+        }
+
     var latinLiftFactor = DEFAULT_LATIN_LIFT_FACTOR
+        set(value) {
+            field = value
+            rebuildMotionSpecs()
+        }
+
     var latinWaveFactor = DEFAULT_LATIN_WAVE_FACTOR
+        set(value) {
+            field = value
+            rebuildMotionSpecs()
+        }
+
+    private var cjkMotionSpec = MotionSpec(true, cjkLiftFactor, cjkWaveFactor)
+    private var latinMotionSpec = MotionSpec(false, latinLiftFactor, latinWaveFactor)
 
     var typefaceSelector: ((Char) -> Typeface)? = null
 
@@ -431,29 +453,12 @@ internal class TextDrawer {
         return maxOffset * (1f - easeOutQuint(phase))
     }
 
-    private fun WordModel.motionSpec(): MotionSpec {
-        return if (text.any { it.isCjk() }) {
-            MotionSpec(animateByChar = true, liftFactor = cjkLiftFactor, waveFactor = cjkWaveFactor)
-        } else {
-            MotionSpec(
-                animateByChar = false,
-                liftFactor = latinLiftFactor,
-                waveFactor = latinWaveFactor
-            )
-        }
-    }
+    private fun WordModel.motionSpec(): MotionSpec =
+        if (hasCjk) cjkMotionSpec else latinMotionSpec
 
-    private fun Char.isCjk(): Boolean {
-        val block = Character.UnicodeBlock.of(this)
-        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
-                block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
-                block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
-                block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
-                block == Character.UnicodeBlock.HIRAGANA ||
-                block == Character.UnicodeBlock.KATAKANA ||
-                block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
-                block == Character.UnicodeBlock.HANGUL_JAMO ||
-                block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
+    private fun rebuildMotionSpecs() {
+        cjkMotionSpec = MotionSpec(animateByChar = true, liftFactor = cjkLiftFactor, waveFactor = cjkWaveFactor)
+        latinMotionSpec = MotionSpec(animateByChar = false, liftFactor = latinLiftFactor, waveFactor = latinWaveFactor)
     }
 
     private fun easeOutQuint(value: Float): Float {

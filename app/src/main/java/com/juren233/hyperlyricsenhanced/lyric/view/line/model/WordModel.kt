@@ -62,6 +62,9 @@ data class WordModel(
     /** 拆分后的字符数组 */
     val chars: CharArray = text.toCharArray()
 
+    /** 词内是否含中日韩字符；构建时算一次，供逐字动效选择参数。 */
+    val hasCjk: Boolean = text.any { it.isCjk() }
+
     /** 各字符宽度数组 */
     val charWidths: FloatArray = FloatArray(text.length)
 
@@ -108,3 +111,16 @@ data class WordModel(
 }
 
 internal fun List<WordModel>.toText(): String = joinToString("") { it.text }
+
+internal fun Char.isCjk(): Boolean {
+    val block = Character.UnicodeBlock.of(this)
+    return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B ||
+            block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.HIRAGANA ||
+            block == Character.UnicodeBlock.KATAKANA ||
+            block == Character.UnicodeBlock.HANGUL_SYLLABLES ||
+            block == Character.UnicodeBlock.HANGUL_JAMO ||
+            block == Character.UnicodeBlock.HANGUL_COMPATIBILITY_JAMO
+}
