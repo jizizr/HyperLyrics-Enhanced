@@ -266,9 +266,7 @@ internal object IslandTextHookerSupport {
 
     fun callNoArgMethodResult(receiver: Any, name: String): Any? {
         return runCatching {
-            receiver.javaClass.methods.find {
-                it.name == name && it.parameterTypes.isEmpty()
-            }?.invoke(receiver)
+            IslandReflect.noArgMethod(receiver.javaClass, name)?.invoke(receiver)
         }.getOrNull()
     }
 

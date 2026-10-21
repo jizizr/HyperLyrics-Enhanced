@@ -235,9 +235,7 @@ internal object IslandProgressGlowController {
 
     private fun invokeNoArg(target: Any, methodName: String): Any? {
         return runCatching {
-            target.javaClass.methods.firstOrNull {
-                it.name == methodName && it.parameterTypes.isEmpty()
-            }?.invoke(target)
+            IslandReflect.noArgMethod(target.javaClass, methodName)?.invoke(target)
         }.getOrNull()
     }
 

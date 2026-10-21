@@ -241,7 +241,8 @@ internal object IslandLegacyWidthHooker {
         resources: Resources,
         islandHeightGetter: Method,
     ): MinWidthOverride? {
-        val resourceId = resources.getIdentifier(
+        val resourceId = IslandViewHelper.cachedResourceId(
+            resources,
             IslandLegacyWidthProfile.MIN_WIDTH_RESOURCE_NAME,
             IslandLegacyWidthProfile.MIN_WIDTH_RESOURCE_TYPE,
             IslandLegacyWidthProfile.MIN_WIDTH_RESOURCE_PACKAGE,

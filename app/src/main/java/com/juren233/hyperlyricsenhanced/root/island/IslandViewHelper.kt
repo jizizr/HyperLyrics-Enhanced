@@ -1,6 +1,7 @@
 package com.juren233.hyperlyricsenhanced.root.island
 
 import android.annotation.SuppressLint
+import android.content.res.Resources
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -21,6 +22,7 @@ object IslandViewHelper {
 
     private val SYSTEMUI_PKG_NAMES = arrayOf("miui.systemui.plugin", "com.android.systemui")
     private val originalMargins = WeakHashMap<View, MarginSnapshot>()
+    private val resourceIds = WeakHashMap<Resources, HashMap<String, Int>>()
     private val isRelayouting = ThreadLocal.withInitial { false }
     private val premeasureScope = IslandPremeasureScope<ViewGroup, View>()
     private val loggedRelayoutClasses = Collections.synchronizedSet(
@@ -41,7 +43,7 @@ object IslandViewHelper {
             
             if (parent != null) {
                 for (pkg in SYSTEMUI_PKG_NAMES) {
-                    val id = res.getIdentifier(containerName, "id", pkg)
+                    val id = resourceId(res, containerName, "id", pkg)
                     if (id != 0) {
                         parent.findViewById<View>(id)?.visibility = if (show) View.VISIBLE else View.GONE
                     }
@@ -63,7 +65,7 @@ object IslandViewHelper {
             
             if (parent != null) {
                 for (pkg in SYSTEMUI_PKG_NAMES) {
-                    val id = res.getIdentifier("island_container_module_text", "id", pkg)
+                    val id = resourceId(res, "island_container_module_text", "id", pkg)
                     if (id != 0) {
                         val textContainer = parent.findViewById<View>(id)
                         if (textContainer != null) {
@@ -125,11 +127,11 @@ object IslandViewHelper {
     fun showOriginalTexts(rootView: ViewGroup, parentName: String) {
         try {
             val res = rootView.resources
-            val slotId = res.getIdentifier(parentName, "id", "miui.systemui.plugin")
+            val slotId = resourceId(res, parentName, "id", "miui.systemui.plugin")
             if (slotId == 0) return
             val parent = rootView.findViewById<ViewGroup>(slotId) ?: return
             
-            val textSlotId = res.getIdentifier("island_container_module_text", "id", "miui.systemui.plugin")
+            val textSlotId = resourceId(res, "island_container_module_text", "id", "miui.systemui.plugin")
             val container = if (textSlotId != 0) (parent.findViewById(textSlotId) ?: parent) else parent
 
             for (i in 0 until container.childCount) {
@@ -396,13 +398,27 @@ object IslandViewHelper {
     fun findViewByName(root: ViewGroup, name: String): View? {
         val res = root.resources
         for (pkg in SYSTEMUI_PKG_NAMES) {
-            val id = res.getIdentifier(name, "id", pkg)
+            val id = resourceId(res, name, "id", pkg)
             if (id != 0) {
                 val v = root.findViewById<View>(id)
                 if (v != null) return v
             }
         }
         return null
+    }
+
+    internal fun cachedResourceId(res: Resources, name: String, defType: String, pkg: String): Int =
+        resourceId(res, name, defType, pkg)
+
+    private fun resourceId(res: Resources, name: String, defType: String, pkg: String): Int {
+        val key = "$defType\u001F$pkg\u001F$name"
+        synchronized(resourceIds) {
+            val cache = resourceIds.getOrPut(res) { HashMap() }
+            cache[key]?.let { return it }
+            val id = res.getIdentifier(name, defType, pkg)
+            cache[key] = id
+            return id
+        }
     }
 
     private fun restoreTextContainerMargins(rootView: ViewGroup, parentName: String) {

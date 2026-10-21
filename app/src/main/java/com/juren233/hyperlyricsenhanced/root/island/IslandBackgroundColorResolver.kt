@@ -36,9 +36,8 @@ internal fun findIslandBackgroundView(view: View): AssociatedBackground? {
             return AssociatedBackground(current, current.javaClass.name)
         }
         val background = runCatching {
-            current.javaClass.methods.firstOrNull {
-                it.name == "getBackgroundView" && it.parameterTypes.isEmpty()
-            }?.invoke(current) as? View
+            IslandReflect.noArgMethod(current.javaClass, "getBackgroundView")
+                ?.invoke(current) as? View
         }.getOrNull()
         if (background != null) {
             return AssociatedBackground(background, current.javaClass.name)

@@ -9,6 +9,7 @@ import com.juren233.hyperlyricsenhanced.common.IslandProgressColorMode
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
 import com.juren233.hyperlyricsenhanced.root.island.IslandProbeUtils
+import com.juren233.hyperlyricsenhanced.root.island.IslandReflect
 import com.juren233.hyperlyricsenhanced.root.island.IslandRuntimePreferenceReader
 import com.juren233.hyperlyricsenhanced.root.utils.CoverColorHelper
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
@@ -132,14 +133,13 @@ object HookIslandGlow {
     private fun injectTickerDataHighlightColor(islandData: Any?, color: String) {
         runCatching {
             val receiver = islandData ?: return
-            val getTickerData = receiver.javaClass.methods.find {
-                it.name == "getTickerData" && it.parameterTypes.isEmpty()
-            } ?: return
-            val setTickerData = receiver.javaClass.methods.find {
-                it.name == "setTickerData" &&
-                    it.parameterTypes.size == 1 &&
-                    it.parameterTypes[0] == String::class.java
-            } ?: return
+            val getTickerData = IslandReflect.noArgMethod(receiver.javaClass, "getTickerData")
+                ?: return
+            val setTickerData = IslandReflect.method(
+                receiver.javaClass,
+                "setTickerData",
+                String::class.java,
+            ) ?: return
 
             val tickerData = getTickerData.invoke(receiver) as? String ?: return
             if (tickerData.isBlank()) return
@@ -183,9 +183,8 @@ object HookIslandGlow {
     private fun refreshTemplateForCurrentIsland(view: View) {
         runCatching {
             val islandData = IslandProbeUtils.getCurrentIslandData(view) ?: return
-            val updateTemplate = view.javaClass.methods.find {
-                it.name == "updateTemplate" && it.parameterTypes.size == 1
-            } ?: return
+            val updateTemplate = IslandReflect.methodByArity(view.javaClass, "updateTemplate", 1)
+                ?: return
             updateTemplate.invoke(view, islandData)
         }.onFailure { e ->
             HookLogger.e(TAG, "刷新媒体岛光效模板失败", e)
@@ -196,18 +195,16 @@ object HookIslandGlow {
         runCatching {
             view ?: return
             val template = findFieldInHierarchy(view.javaClass, "template")?.get(view)
-            template?.javaClass?.methods
-                ?.find {
-                    it.name == "setHighlightColor" &&
-                        it.parameterTypes.size == 1 &&
-                        it.parameterTypes[0] == String::class.java
-                }
-                ?.invoke(template, null)
+            template?.let { target ->
+                IslandReflect.method(target.javaClass, "setHighlightColor", String::class.java)
+                    ?.invoke(target, null)
+            }
 
             val highlightState = findFieldInHierarchy(view.javaClass, "_highlightColor")?.get(view)
-            highlightState?.javaClass?.methods
-                ?.find { it.name == "setValue" && it.parameterTypes.size == 1 }
-                ?.invoke(highlightState, null)
+            highlightState?.let { target ->
+                IslandReflect.methodByArity(target.javaClass, "setValue", 1)
+                    ?.invoke(target, null)
+            }
         }.onFailure { e ->
             HookLogger.e(TAG, "清除视图 highlightColor 失败", e)
         }

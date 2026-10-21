@@ -122,7 +122,7 @@ internal object IslandMediaReinstater {
 
     private fun findUpdateMethod(host: ViewGroup): Method? {
         return runCatching {
-            host.javaClass.methods.find { it.name == UPDATE_METHOD_NAME && it.parameterTypes.size == 3 }
+            IslandReflect.methodByArity(host.javaClass, UPDATE_METHOD_NAME, 3)
         }.getOrNull()
     }
 

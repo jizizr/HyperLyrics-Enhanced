@@ -50,8 +50,10 @@ internal object IslandDynamicWidthLimiter {
         val content = calculatingContent ?: return candidate
         if (native == null || candidate == null || params == null || helper == null) return native
         return runCatching {
-            val screenWidth = params.javaClass.getMethod(IslandDynamicLimitProfile.SCREEN_WIDTH_GETTER)
-                .invoke(params) as Int
+            val screenWidth = IslandReflect.noArgMethod(
+                params.javaClass,
+                IslandDynamicLimitProfile.SCREEN_WIDTH_GETTER,
+            )?.invoke(params) as Int
             // No reliable matching status-bar window: retain native protection, never the
             // unrestricted candidate. A later status-bar layout triggers another calculation.
             val obstacles = IslandStatusBarSpaceMonitor.obstacles(content, screenWidth) ?: return native
@@ -61,8 +63,10 @@ internal object IslandDynamicWidthLimiter {
             }
             val original = api.getters.map { it.invoke(candidate) as Int }
             val values = original.toMutableList()
-            val anchor = if (pad) content.javaClass.getMethod(IslandDynamicLimitProfile.DATE_POSITION_GETTER)
-                .invoke(content) as? Int else null
+            val anchor = if (pad) IslandReflect.noArgMethod(
+                content.javaClass,
+                IslandDynamicLimitProfile.DATE_POSITION_GETTER,
+            )?.invoke(content) as? Int else null
             val gap = (6 * content.resources.displayMetrics.density).toInt()
             // 与动态长度下限（BigIslandMinWidthHook）一致：上限收缩不得低于岛高胶囊，
             // 否则空间不足时岛会被压缩到趋近于零。

@@ -51,10 +51,10 @@ internal object IslandProbeUtils {
     }
 
     fun getHolderRootView(holder: Any?): ViewGroup? {
+        val target = holder ?: return null
         return runCatching {
-            holder?.javaClass?.methods?.find {
-                it.name == "getRootView" && it.parameterTypes.isEmpty()
-            }?.invoke(holder) as? ViewGroup
+            IslandReflect.noArgMethod(target.javaClass, "getRootView")
+                ?.invoke(target) as? ViewGroup
         }.getOrNull()
     }
 
@@ -74,9 +74,7 @@ internal object IslandProbeUtils {
     private fun Any?.callGetter(name: String): Any? {
         val receiver = this ?: return null
         return runCatching {
-            receiver.javaClass.methods.find {
-                it.name == name && it.parameterTypes.isEmpty()
-            }?.invoke(receiver)
+            IslandReflect.noArgMethod(receiver.javaClass, name)?.invoke(receiver)
         }.getOrNull()
     }
 

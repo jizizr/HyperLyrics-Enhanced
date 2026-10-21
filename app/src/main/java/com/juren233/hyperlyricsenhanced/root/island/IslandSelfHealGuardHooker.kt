@@ -67,9 +67,8 @@ internal object IslandSelfHealGuardHooker {
         }
 
         private fun Any?.readIslandKey(): String? = runCatching {
-            this?.javaClass?.methods
-                ?.find { it.name == "getKey" && it.parameterTypes.isEmpty() }
-                ?.invoke(this) as? String
+            this ?: return@runCatching null
+            IslandReflect.noArgMethod(javaClass, "getKey")?.invoke(this) as? String
         }.getOrNull()
     }
 

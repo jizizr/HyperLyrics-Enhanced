@@ -65,8 +65,10 @@ internal object IslandFullIslandDynamicWidth {
                 left.measuredWidth, left.measureIndependentContentWidth(leftLine))
             val rightDemand = IslandFullIslandWidthPolicy.requiredArea(rightArea.measuredWidth,
                 right.measuredWidth, right.measureIndependentContentWidth(rightLine))
-            val screenWidth = params.javaClass.getMethod(IslandDynamicLimitProfile.SCREEN_WIDTH_GETTER)
-                .invoke(params) as Int
+            val screenWidth = IslandReflect.noArgMethod(
+                params.javaClass,
+                IslandDynamicLimitProfile.SCREEN_WIDTH_GETTER,
+            )?.invoke(params) as Int
             val floor = IslandDynamicLimitProfile.readIslandHeight(helper) +
                 (2 * root.resources.displayMetrics.density).toInt()
             val original = Geometry(values[0], values[1], values[2], values[3])

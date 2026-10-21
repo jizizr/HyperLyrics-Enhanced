@@ -37,7 +37,8 @@ internal object IslandDynamicLimitProfile {
     const val ISLAND_HEIGHT_GETTER = "getIslandViewHeight"
 
     fun readIslandHeight(helper: Any): Int {
-        val method = helper.javaClass.getMethod(ISLAND_HEIGHT_GETTER)
+        val method = IslandReflect.noArgMethod(helper.javaClass, ISLAND_HEIGHT_GETTER)
+            ?: throw NoSuchMethodException(ISLAND_HEIGHT_GETTER)
         require(method.returnType == Int::class.javaPrimitiveType)
         return (method.invoke(helper) as Int).also { require(it > 0) }
     }

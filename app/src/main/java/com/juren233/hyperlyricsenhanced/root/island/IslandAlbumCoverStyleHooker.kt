@@ -466,9 +466,8 @@ internal object IslandAlbumCoverStyleHooker {
 
     private fun isMediaAlbum(accessor: CoverAccessor, holder: Any): Boolean {
         val picInfo = accessor.picInfoField.get(holder) ?: return false
-        val pic = picInfo.javaClass.methods.firstOrNull {
-            it.name == "getPic" && it.parameterTypes.isEmpty()
-        }?.invoke(picInfo) as? String
+        val pic = IslandReflect.noArgMethod(picInfo.javaClass, "getPic")
+            ?.invoke(picInfo) as? String
         return pic == MEDIA_ALBUM_ICON
     }
 

@@ -201,9 +201,8 @@ internal object IslandWidthHooker {
                 if (!IslandViewHelper.isDynamicWidthEnabled()) return@runCatching result
                 val original = (result as? Number)?.toInt() ?: return@runCatching result
                 val helper = chain.thisObject ?: return@runCatching result
-                val height = helper.javaClass.methods.firstOrNull {
-                    it.name == "getIslandViewHeight" && it.parameterTypes.isEmpty()
-                }?.invoke(helper) as? Int ?: return@runCatching result
+                val height = IslandReflect.noArgMethod(helper.javaClass, "getIslandViewHeight")
+                    ?.invoke(helper) as? Int ?: return@runCatching result
                 if (height <= 0) return@runCatching result
                 val margin = findFieldValue(helper, "context")?.let { context ->
                     runCatching {
@@ -302,9 +301,7 @@ internal object IslandWidthHooker {
         }
 
         private fun Any.intGetter(suffix: String): Int? = runCatching {
-            javaClass.methods.firstOrNull {
-                it.name == "get$suffix" && it.parameterTypes.isEmpty()
-            }?.invoke(this) as? Int
+            IslandReflect.noArgMethod(javaClass, "get$suffix")?.invoke(this) as? Int
         }.getOrNull()
     }
 
@@ -388,14 +385,12 @@ internal object IslandWidthHooker {
         private fun isFlipTiny(helper: Any?): Boolean = runCatching {
             helper?.javaClass?.classLoader
                 ?.loadClass("miui.systemui.util.FlipUtils")
-                ?.getMethod("isFlipTiny")
+                ?.let { IslandReflect.noArgMethod(it, "isFlipTiny") }
                 ?.invoke(null) as? Boolean
         }.getOrNull() == true
 
         private fun Any.intGetter(suffix: String): Int? = runCatching {
-            javaClass.methods.firstOrNull {
-                it.name == "get$suffix" && it.parameterTypes.isEmpty()
-            }?.invoke(this) as? Int
+            IslandReflect.noArgMethod(javaClass, "get$suffix")?.invoke(this) as? Int
         }.getOrNull()
     }
 }

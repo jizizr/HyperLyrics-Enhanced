@@ -363,9 +363,8 @@ internal object IslandProgressGlowHooker {
         }
 
         private fun findGetter(view: View, name: String): Method {
-            return view.javaClass.methods.firstOrNull {
-                it.name == name && it.parameterTypes.isEmpty()
-            } ?: throw NoSuchMethodException("${view.javaClass.name}.$name")
+            return IslandReflect.noArgMethod(view.javaClass, name)
+                ?: throw NoSuchMethodException("${view.javaClass.name}.$name")
         }
 
         private fun resolveIslandRadius(view: View): Float {

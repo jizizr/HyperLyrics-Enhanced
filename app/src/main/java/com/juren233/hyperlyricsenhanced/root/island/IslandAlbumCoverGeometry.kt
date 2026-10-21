@@ -195,9 +195,7 @@ internal fun IslandAlbumCoverStyleHooker.resolveInitializedContainerGeometry(
 
 internal fun IslandAlbumCoverStyleHooker.callViewGetter(receiver: Any, methodName: String): View? {
     return runCatching {
-        receiver.javaClass.methods.firstOrNull {
-            it.name == methodName && it.parameterTypes.isEmpty()
-        }?.invoke(receiver) as? View
+        IslandReflect.noArgMethod(receiver.javaClass, methodName)?.invoke(receiver) as? View
     }.getOrNull()
 }
 
@@ -392,9 +390,7 @@ internal fun IslandAlbumCoverStyleHooker.findNamedContainer(root: ViewGroup, nam
 
 internal fun IslandAlbumCoverStyleHooker.resolveFakeTransitionOwner(fakeView: ViewGroup, realView: View?): View? {
     return realView ?: runCatching {
-        fakeView.javaClass.methods.firstOrNull {
-            it.name == "getRealView" && it.parameterTypes.isEmpty()
-        }?.invoke(fakeView) as? View
+        IslandReflect.noArgMethod(fakeView.javaClass, "getRealView")?.invoke(fakeView) as? View
     }.getOrNull()
 }
 
@@ -408,9 +404,7 @@ internal fun IslandAlbumCoverStyleHooker.resolveFakeTransitionStateClass(fakeVie
     val owner = resolveFakeTransitionOwner(fakeView, realView)
     val state = owner?.let { target ->
         runCatching {
-            target.javaClass.methods.firstOrNull {
-                it.name == "getState" && it.parameterTypes.isEmpty()
-            }?.invoke(target)
+            IslandReflect.noArgMethod(target.javaClass, "getState")?.invoke(target)
         }.getOrNull()
     }
     return state?.javaClass?.name
@@ -614,8 +608,7 @@ internal fun IslandAlbumCoverStyleHooker.applySnapshotToImage(
 
 internal fun IslandAlbumCoverStyleHooker.getViewInt(view: View, getterName: String): Int? {
     return runCatching {
-        view.javaClass.methods.firstOrNull {
-            it.name == getterName && it.parameterTypes.isEmpty()
-        }?.invoke(view).let { it as? Number }?.toInt()
+        IslandReflect.noArgMethod(view.javaClass, getterName)
+            ?.invoke(view).let { it as? Number }?.toInt()
     }.getOrNull()
 }
