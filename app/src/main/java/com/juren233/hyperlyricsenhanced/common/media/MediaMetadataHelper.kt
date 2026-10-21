@@ -37,7 +37,7 @@ object MediaMetadataHelper {
     private const val ARTWORK_MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
     private const val ARTWORK_FAILURE_RETRY_MS = 60_000L
     private const val ARTWORK_PENDING_CACHE_TTL_MS = 5_000L
-    private const val MEDIA_INFO_CACHE_TTL_MS = 3_000L
+    private const val MEDIA_INFO_CACHE_TTL_MS = 30_000L
     private const val SESSION_REFRESH_COOLDOWN_MS = 1_000L
     private const val NEXT_LOOKUP_FAILURE_CACHE_MS = 1_000L
     private const val ARTWORK_CONNECT_TIMEOUT_MS = 2_500
@@ -158,7 +158,7 @@ object MediaMetadataHelper {
             if (mediaInfo.title.isNotBlank() || mediaInfo.artist.isNotBlank() ||
                 mediaInfo.album.isNotBlank() || mediaInfo.albumArt != null || mediaInfo.duration > 0L
             ) {
-                // 兜底过期时间：回调漏报或同包多会话切换时，避免缓存一直停在旧歌。
+                // 兜底过期时间：正常靠元数据/播放态/会话变化回调失效，这里只防回调漏报，间隔放长避免周期性跨进程拉封面。
                 val expiresAtMs = SystemClock.uptimeMillis() + if (result.artworkPending) {
                     ARTWORK_PENDING_CACHE_TTL_MS
                 } else {
