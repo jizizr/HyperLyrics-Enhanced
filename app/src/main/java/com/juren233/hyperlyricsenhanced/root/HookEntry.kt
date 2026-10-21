@@ -568,6 +568,11 @@ class HookEntry : XposedModule() {
                 }
             }
             MediaMetadataHelper.setArtworkResolvedListener(BaseIslandRenderer::refreshActiveIsland)
+            MediaMetadataHelper.setMediaInfoChangedListener { packageName ->
+                if (packageName == LyriconDataBridge.currentLyricPackageName) {
+                    BaseIslandRenderer.refreshActiveIsland()
+                }
+            }
             registerPreferenceBroadcastReceiver(app)
 
             optionalRuntime("preference_diagnostics") {

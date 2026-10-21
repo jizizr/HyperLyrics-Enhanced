@@ -20,6 +20,7 @@ import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.Collections
 import java.util.WeakHashMap
+import kotlin.math.roundToInt
 
 internal object IslandProgressGlowHooker {
     private const val TAG = "IslandProgressGlowHooker"
@@ -77,30 +78,9 @@ internal object IslandProgressGlowHooker {
                 stateByBackgroundView[backgroundView] = it
             }
         }
-        val normalizedFraction = fraction.coerceIn(0f, 1f)
-        val normalizedProgressColors = progressColors
-            .takeIf { it.isNotEmpty() }
-            ?.copyOf()
-            ?: intArrayOf(DEFAULT_PROGRESS_COLOR)
-        val changed = synchronized(state) {
-            if (
-                state.initialized &&
-                state.fraction == normalizedFraction &&
-                state.progressColors.contentEquals(normalizedProgressColors) &&
-                state.trackColor == trackColor &&
-                state.progressStyle == progressStyle
-            ) {
-                false
-            } else {
-                state.initialized = true
-                state.fraction = normalizedFraction
-                state.progressColors = normalizedProgressColors
-                state.trackColor = trackColor
-                state.progressStyle = progressStyle
-                true
-            }
+        if (state.update(fraction, progressColors, trackColor, progressStyle)) {
+            backgroundView.invalidate()
         }
-        if (changed) backgroundView.invalidate()
     }
 
     fun clearMediaProgress(backgroundView: View) {
@@ -200,6 +180,48 @@ internal object IslandProgressGlowHooker {
         private var shaderLeft = Float.NaN
         private var shaderRight = Float.NaN
         private var shaderSourceColors: IntArray? = null
+
+        fun update(
+            fraction: Float,
+            progressColors: IntArray,
+            trackColor: Int,
+            progressStyle: Int,
+        ): Boolean {
+            val normalized = fraction.coerceIn(0f, 1f)
+            synchronized(this) {
+                val quantized = quantizeFraction(normalized)
+                val sourceColors = progressColors.takeIf { it.isNotEmpty() }
+                val colorsChanged = if (sourceColors == null) {
+                    this.progressColors.size != 1 || this.progressColors[0] != DEFAULT_PROGRESS_COLOR
+                } else {
+                    !this.progressColors.contentEquals(sourceColors)
+                }
+                if (
+                    initialized &&
+                    this.fraction == quantized &&
+                    !colorsChanged &&
+                    this.trackColor == trackColor &&
+                    this.progressStyle == progressStyle
+                ) {
+                    return false
+                }
+                initialized = true
+                this.fraction = quantized
+                if (colorsChanged) {
+                    this.progressColors = sourceColors?.copyOf() ?: intArrayOf(DEFAULT_PROGRESS_COLOR)
+                }
+                this.trackColor = trackColor
+                this.progressStyle = progressStyle
+                return true
+            }
+        }
+
+        private fun quantizeFraction(fraction: Float): Float {
+            val length = trackLength
+            if (length <= 0f) return fraction
+            val pixels = (fraction * length).roundToInt().coerceAtMost(length.toInt())
+            return pixels.toFloat() / length
+        }
 
         fun draw(canvas: Canvas) {
             val nativeStroke = (strokeWidth.invokeInt() ?: return).toFloat()

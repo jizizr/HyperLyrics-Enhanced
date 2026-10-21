@@ -37,12 +37,24 @@ internal object IslandNativeTextCollisionGuard {
         val originalAlpha: Float,
     )
 
+    private class Candidate(
+        val view: WeakReference<TextView>,
+        var text: CharSequence?,
+        var matches: Boolean = true,
+    )
+
     private class State(root: ViewGroup) {
         val root = WeakReference(root)
         var preDrawObserver: WeakReference<ViewTreeObserver>? = null
         var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null
+        var layoutObserver: WeakReference<ViewTreeObserver>? = null
+        var layoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
         var attachListener: View.OnAttachStateChangeListener? = null
         var wrappers: List<TrackedWrapper> = emptyList()
+        var candidates: List<Candidate> = emptyList()
+        var needsCandidateScan = true
+        val wrapperBounds = arrayOf(Rect(), Rect())
+        val textBounds = Rect()
         var collisionActive = false
         var lastTitle: String? = null
         var lastBridgeTitle: String? = null
@@ -73,8 +85,10 @@ internal object IslandNativeTextCollisionGuard {
 
             val state = states[target] ?: createState(target).also { states[target] = it }
             updateTrackedWrappers(state, wrappers)
+            state.needsCandidateScan = true
             installPreDrawListener(target, state)
-            updateCollision(target, state, wrappers)
+            installLayoutListener(target, state)
+            updateCollision(target, state)
             startDiagnostic(state)
         }
     }
@@ -91,12 +105,14 @@ internal object IslandNativeTextCollisionGuard {
                 val target = state.root.get() ?: return
                 if (states[target] === state) {
                     installPreDrawListener(target, state)
+                    installLayoutListener(target, state)
                     startDiagnostic(state)
                 }
             }
 
             override fun onViewDetachedFromWindow(view: View) {
                 removePreDrawListener(state)
+                removeLayoutListener(state)
                 stopDiagnostic(state)
                 restoreWrapperAlpha(state)
                 state.collisionActive = false
@@ -131,12 +147,10 @@ internal object IslandNativeTextCollisionGuard {
         val listener = ViewTreeObserver.OnPreDrawListener {
             val target = state.root.get()
             if (target != null && states[target] === state) {
-                val wrappers = resolveSpaceGateWrappers(target)
-                if (wrappers == null) {
-                    clearOnMain(target)
+                if (ensureWrappers(target, state)) {
+                    updateCollision(target, state)
                 } else {
-                    updateTrackedWrappers(state, wrappers)
-                    updateCollision(target, state, wrappers)
+                    clearOnMain(target)
                 }
             }
             true
@@ -156,6 +170,47 @@ internal object IslandNativeTextCollisionGuard {
         state.preDrawListener = null
     }
 
+    /**
+     * 每帧只校验缓存的 wrapper 是否仍挂在 root 下；只有注入重建时才重新全树查找。
+     */
+    private fun ensureWrappers(root: ViewGroup, state: State): Boolean {
+        val tracked = state.wrappers
+        val left = tracked.getOrNull(0)?.view?.get()
+        val right = tracked.getOrNull(1)?.view?.get()
+        if (left != null && right != null && isDescendantOf(left, root) && isDescendantOf(right, root)) {
+            return true
+        }
+        val wrappers = resolveSpaceGateWrappers(root) ?: return false
+        updateTrackedWrappers(state, wrappers)
+        state.needsCandidateScan = true
+        return true
+    }
+
+    private fun installLayoutListener(root: ViewGroup, state: State) {
+        if (!root.isAttachedToWindow) return
+        val observer = root.viewTreeObserver
+        if (!observer.isAlive) return
+        if (state.layoutObserver?.get() === observer && state.layoutListener != null) return
+
+        removeLayoutListener(state)
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            state.needsCandidateScan = true
+        }
+        observer.addOnGlobalLayoutListener(listener)
+        state.layoutObserver = WeakReference(observer)
+        state.layoutListener = listener
+    }
+
+    private fun removeLayoutListener(state: State) {
+        val observer = state.layoutObserver?.get()
+        val listener = state.layoutListener
+        if (observer?.isAlive == true && listener != null) {
+            runCatching { observer.removeOnGlobalLayoutListener(listener) }
+        }
+        state.layoutObserver = null
+        state.layoutListener = null
+    }
+
     private fun updateTrackedWrappers(state: State, wrappers: List<View>) {
         val previous = state.wrappers
         previous.forEach { tracked ->
@@ -168,8 +223,8 @@ internal object IslandNativeTextCollisionGuard {
         }
     }
 
-    private fun updateCollision(root: ViewGroup, state: State, wrappers: List<View>) {
-        val conflict = findTextCollision(root, wrappers, trackText(state))
+    private fun updateCollision(root: ViewGroup, state: State) {
+        val conflict = findTextCollision(root, state, trackText(state))
         val active = conflict != null
         state.wrappers.forEach { tracked ->
             val wrapper = tracked.view.get() ?: return@forEach
@@ -183,10 +238,11 @@ internal object IslandNativeTextCollisionGuard {
                     "nativeView=${identity(it.textView)} textHash=${it.textView.text?.toString()?.hashCode()} " +
                         "native=${it.textBounds} wrapper=${identity(it.wrapper)} bounds=${it.wrapperBounds}"
                 } ?: "nativeConflict=cleared"
+                val wrappers = state.wrappers.mapNotNull { it.view.get() }
                 HookLogger.i(
                     TAG,
-                    "[NativeTextOverlapGate] active=$active left=${identity(wrappers[0])} " +
-                        "right=${identity(wrappers[1])} $detail",
+                    "[NativeTextOverlapGate] active=$active left=${wrappers.getOrNull(0)?.let(::identity)} " +
+                        "right=${wrappers.getOrNull(1)?.let(::identity)} $detail",
                 )
             }
         }
@@ -205,21 +261,58 @@ internal object IslandNativeTextCollisionGuard {
                 .map(::normalizeText)
                 .filter { it.length >= 3 }
                 .toSet()
+            state.needsCandidateScan = true
         }
         return state.normalizedTrackText
     }
 
     private fun findTextCollision(
         root: ViewGroup,
-        wrappers: List<View>,
+        state: State,
         trackText: Set<String>,
     ): TextCollision? {
         if (trackText.isEmpty()) return null
-        val wrapperBounds = wrappers.mapNotNull { wrapper ->
-            visibleBounds(wrapper, root, includeViewAlpha = false)?.let { wrapper to it }
-        }
-        if (wrapperBounds.isEmpty()) return null
+        if (state.needsCandidateScan) scanCandidates(root, state)
+        if (state.candidates.isEmpty()) return null
 
+        val wrappers = state.wrappers
+        val leftWrapper = wrappers.getOrNull(0)?.view?.get() ?: return null
+        val rightWrapper = wrappers.getOrNull(1)?.view?.get() ?: return null
+        val bounds = state.wrapperBounds
+        val leftVisible = visibleBounds(leftWrapper, root, includeViewAlpha = false, out = bounds[0])
+        val rightVisible = visibleBounds(rightWrapper, root, includeViewAlpha = false, out = bounds[1])
+        if (!leftVisible && !rightVisible) return null
+
+        for (candidate in state.candidates) {
+            val view = candidate.view.get() ?: continue
+            if (view.text !== candidate.text) {
+                candidate.text = view.text
+                candidate.matches = matchesTrackText(view.text?.toString().orEmpty(), trackText)
+            }
+            if (!candidate.matches || !isVisibleWithinRoot(view, root)) continue
+            if (!visibleBounds(view, root, includeViewAlpha = true, out = state.textBounds)) continue
+            if (leftVisible && Rect.intersects(state.textBounds, bounds[0])) {
+                return TextCollision(view, Rect(state.textBounds), leftWrapper, Rect(bounds[0]))
+            }
+            if (rightVisible && Rect.intersects(state.textBounds, bounds[1])) {
+                return TextCollision(view, Rect(state.textBounds), rightWrapper, Rect(bounds[1]))
+            }
+        }
+        return null
+    }
+
+    /**
+     * 仅在布局变化、歌曲变化或注入重建时遍历一次视图树，缓存与歌名匹配的原生 TextView。
+     */
+    private fun scanCandidates(root: ViewGroup, state: State) {
+        state.needsCandidateScan = false
+        val trackText = state.normalizedTrackText
+        if (trackText.isEmpty()) {
+            state.candidates = emptyList()
+            return
+        }
+        val wrappers = state.wrappers
+        val found = ArrayList<Candidate>()
         val pending = ArrayDeque<View>()
         pending.addLast(root)
         var visited = 0
@@ -227,19 +320,11 @@ internal object IslandNativeTextCollisionGuard {
             val view = pending.removeFirst()
             visited++
             // Do not treat either half of the module's own virtual belt as native metadata.
-            if (wrappers.any { it === view }) continue
+            if (wrappers.any { it.view.get() === view }) continue
 
-            if (view is TextView && isVisibleWithinRoot(view, root)) {
-                val text = view.text?.toString().orEmpty()
-                if (matchesTrackText(text, trackText)) {
-                    val textBounds = visibleBounds(view, root, includeViewAlpha = true)
-                    if (textBounds != null) {
-                        wrapperBounds.firstOrNull { (_, bounds) -> Rect.intersects(textBounds, bounds) }
-                            ?.let { (wrapper, bounds) ->
-                                return TextCollision(view, textBounds, wrapper, bounds)
-                            }
-                    }
-                }
+            // 保留当前不可见的候选：原生标题可能只做 alpha 淡入，不会触发新的布局。
+            if (view is TextView && matchesTrackText(view.text?.toString().orEmpty(), trackText)) {
+                found += Candidate(WeakReference(view), view.text)
             }
 
             val group = view as? ViewGroup ?: continue
@@ -247,7 +332,7 @@ internal object IslandNativeTextCollisionGuard {
                 group.getChildAt(index)?.let(pending::addLast)
             }
         }
-        return null
+        state.candidates = found
     }
 
     private fun isVisibleWithinRoot(view: View, root: ViewGroup): Boolean {
@@ -265,22 +350,32 @@ internal object IslandNativeTextCollisionGuard {
     }
 
     private fun visibleBounds(view: View, root: ViewGroup, includeViewAlpha: Boolean): Rect? {
-        if (!view.isAttachedToWindow || !view.isShown) return null
+        val bounds = Rect()
+        return if (visibleBounds(view, root, includeViewAlpha, bounds)) bounds else null
+    }
+
+    private fun visibleBounds(
+        view: View,
+        root: ViewGroup,
+        includeViewAlpha: Boolean,
+        out: Rect,
+    ): Boolean {
+        if (!view.isAttachedToWindow || !view.isShown) return false
         var current: View? = if (includeViewAlpha) view else view.parent as? View
         var effectiveAlpha = 1f
         while (current != null) {
-            if (current.visibility != View.VISIBLE) return null
+            if (current.visibility != View.VISIBLE) return false
             effectiveAlpha *= current.alpha
-            if (effectiveAlpha <= MIN_EFFECTIVE_ALPHA) return null
+            if (effectiveAlpha <= MIN_EFFECTIVE_ALPHA) return false
             if (current === root) break
             current = current.parent as? View
         }
-        if (current !== root) return null
-        val bounds = Rect()
-        if (!runCatching { view.getGlobalVisibleRect(bounds) }.getOrDefault(false) || bounds.isEmpty) {
-            return null
+        if (current !== root) return false
+        out.setEmpty()
+        if (!runCatching { view.getGlobalVisibleRect(out) }.getOrDefault(false) || out.isEmpty) {
+            return false
         }
-        return bounds
+        return true
     }
 
     private fun matchesTrackText(value: String, trackText: Set<String>): Boolean {
@@ -403,9 +498,11 @@ internal object IslandNativeTextCollisionGuard {
         val state = states.remove(root) ?: return
         state.attachListener?.let(root::removeOnAttachStateChangeListener)
         removePreDrawListener(state)
+        removeLayoutListener(state)
         stopDiagnostic(state)
         restoreWrapperAlpha(state)
         state.wrappers = emptyList()
+        state.candidates = emptyList()
         state.collisionActive = false
     }
 

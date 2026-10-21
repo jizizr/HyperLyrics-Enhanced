@@ -67,7 +67,7 @@ internal object IslandProgressGlowController {
         }
         val colorMode = resolveColorMode(prefs)
         if (!IslandProgressColorMode.isEnabled(colorMode)) {
-            logStage(rootView, DiagnosticStage.DISABLED, "边缘光效进度条已禁用")
+            logStage(rootView, DiagnosticStage.DISABLED) { "边缘光效进度条已禁用" }
             clear(rootView)
             return
         }
@@ -78,12 +78,10 @@ internal object IslandProgressGlowController {
             forceRefresh = mediaInfo != null
         )
         if (playbackProgress.fraction < 0f) {
-            logStage(
-                rootView,
-                DiagnosticStage.INVALID_MEDIA_PROGRESS,
+            logStage(rootView, DiagnosticStage.INVALID_MEDIA_PROGRESS) {
                 "媒体进度不可用: package=$packageName, position=${playbackProgress.position}, " +
                     "duration=${playbackProgress.duration}, playing=${playbackProgress.isPlaying}"
-            )
+            }
             // MediaSession can briefly publish no duration/position while switching tracks.
             // Keep the last drawn state; subsequent position callbacks continue retrying.
             return
@@ -92,11 +90,9 @@ internal object IslandProgressGlowController {
         val backgroundView = cachedBackgroundView(rootView) ?: findBackgroundView(rootView)?.also {
             replaceBackgroundView(rootView, it)
         } ?: run {
-            logStage(
-                rootView,
-                DiagnosticStage.BACKGROUND_VIEW_NOT_FOUND,
+            logStage(rootView, DiagnosticStage.BACKGROUND_VIEW_NOT_FOUND) {
                 "未找到超级岛背景视图: root=${rootView.javaClass.name}"
-            )
+            }
             clear(rootView)
             return
         }
@@ -134,16 +130,14 @@ internal object IslandProgressGlowController {
             progressEnd = colors.progressEnd,
             track = colors.track
         )
-        logStage(
-            rootView,
-            DiagnosticStage.BACKGROUND_REGISTERED,
+        logStage(rootView, DiagnosticStage.BACKGROUND_REGISTERED) {
             "边缘光效进度已更新: package=$packageName, " +
                 "progress=${playbackProgress.fraction}, " +
                 "progressStart=${colors.progressStart.toUInt().toString(16)}, " +
                 "progressEnd=${colors.progressEnd.toUInt().toString(16)}, " +
                 "trackColor=${colors.track.toUInt().toString(16)}, " +
                 "style=$progressStyle"
-        )
+        }
     }
 
     fun clear(rootView: ViewGroup) {
@@ -390,7 +384,7 @@ internal object IslandProgressGlowController {
         return withAlpha(color, sourceAlpha * alpha.coerceIn(0, 255) / 255)
     }
 
-    private fun logStage(rootView: ViewGroup, stage: DiagnosticStage, message: String) {
+    private inline fun logStage(rootView: ViewGroup, stage: DiagnosticStage, message: () -> String) {
         val changed = synchronized(diagnosticStageByRoot) {
             if (diagnosticStageByRoot[rootView] == stage) {
                 false
@@ -399,7 +393,7 @@ internal object IslandProgressGlowController {
                 true
             }
         }
-        if (changed) HookLogger.d(TAG, message)
+        if (changed) HookLogger.d(TAG, message())
     }
 
     private enum class DiagnosticStage {

@@ -49,6 +49,7 @@ object MediaMetadataHelper {
     private var mediaInfoGeneration = 0L
     private val controllerCallbacks = HashMap<MediaSession.Token, ControllerCallback>()
     private val lastSessionRefreshByPackage = HashMap<String, Long>()
+    private val lastTrackSignatureByPackage = HashMap<String, String>()
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "HyperLyrics-MediaArtwork").apply { isDaemon = true }
@@ -61,6 +62,9 @@ object MediaMetadataHelper {
 
     @Volatile
     private var artworkResolvedListener: (() -> Unit)? = null
+
+    @Volatile
+    private var mediaInfoChangedListener: ((String) -> Unit)? = null
 
     @Volatile
     private var mediaSessionManager: MediaSessionManager? = null
@@ -174,10 +178,16 @@ object MediaMetadataHelper {
         artworkResolvedListener = listener
     }
 
+    fun setMediaInfoChangedListener(listener: ((String) -> Unit)?) {
+        mediaInfoChangedListener = listener
+    }
+
     fun clearArtworkResolution() {
         artworkGeneration.incrementAndGet()
         artworkResolvedListener = null
+        mediaInfoChangedListener = null
         clearMediaInfoCache()
+        synchronized(sessionLock) { lastTrackSignatureByPackage.clear() }
         synchronized(artworkLock) {
             artworkCache.clear()
             pendingArtworkRequests.clear()
@@ -473,12 +483,35 @@ object MediaMetadataHelper {
             val callback = object : MediaController.Callback() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     invalidateMediaInfo(packageName)
-                    notifyMediaInfoChanged()
+                    val snapshot = metadata?.let { runCatching { it.snapshot() }.getOrNull() }
+                    val signature = snapshot?.let {
+                        trackIdentitySignature(
+                            packageName = packageName,
+                            mediaId = it.mediaId,
+                            title = it.title,
+                            artist = it.artist,
+                            album = it.album,
+                            duration = it.duration,
+                            hasDirectArtwork = it.directArtwork != null,
+                        )
+                    }
+                    val identityChanged = synchronized(sessionLock) {
+                        if (signature == null) {
+                            lastTrackSignatureByPackage.remove(packageName) != null
+                        } else {
+                            lastTrackSignatureByPackage.put(packageName, signature) != signature
+                        }
+                    }
+                    // 逐句改写标题的播放器会高频更新元数据，只有曲目身份变化才值得整岛重刷。
+                    if (identityChanged) notifyMediaInfoChanged(packageName)
                 }
 
                 override fun onSessionDestroyed() {
                     invalidateMediaInfo(packageName)
-                    synchronized(sessionLock) { controllerCallbacks.remove(token) }
+                    synchronized(sessionLock) {
+                        controllerCallbacks.remove(token)
+                        lastTrackSignatureByPackage.remove(packageName)
+                    }
                 }
             }
             if (runCatching { controller.registerCallback(callback, mainHandler) }.isSuccess) {
@@ -805,10 +838,10 @@ object MediaMetadataHelper {
         }
     }
 
-    private fun notifyMediaInfoChanged() {
-        val listener = artworkResolvedListener ?: return
+    private fun notifyMediaInfoChanged(packageName: String) {
+        val listener = mediaInfoChangedListener ?: return
         mainHandler.post {
-            runCatching(listener)
+            runCatching { listener(packageName) }
         }
     }
 
@@ -902,6 +935,30 @@ object MediaMetadataHelper {
                 duration.takeIf { it > 0L }?.toString().orEmpty(),
             ).joinToString("\u001F")
         }
+    }
+
+    /**
+     * 曲目身份签名：复用封面缓存的键规则，再附加是否已带直接封面。
+     * 标题被播放器逐句改写时签名保持不变，避免触发整岛重刷。
+     */
+    internal fun trackIdentitySignature(
+        packageName: String,
+        mediaId: String,
+        title: String,
+        artist: String,
+        album: String,
+        duration: Long,
+        hasDirectArtwork: Boolean,
+    ): String? {
+        val identity = buildArtworkCacheKey(
+            packageName = packageName,
+            mediaId = mediaId,
+            title = title,
+            artist = artist,
+            album = album,
+            duration = duration,
+        ) ?: return null
+        return identity + if (hasDirectArtwork) "\u001Fart" else "\u001Fno-art"
     }
 
     private fun normalizeArtworkIdentityText(value: String): String {

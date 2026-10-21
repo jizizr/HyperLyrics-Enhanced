@@ -111,4 +111,81 @@ class MediaArtworkIdentityTest {
             )
         )
     }
+
+    @Test
+    fun `lyric line title rewrites keep the track identity stable`() {
+        fun signature(title: String, mediaId: String = "song-42") =
+            MediaMetadataHelper.trackIdentitySignature(
+                packageName = "com.example.player",
+                mediaId = mediaId,
+                title = title,
+                artist = "Artist",
+                album = "Album",
+                duration = 180_000L,
+                hasDirectArtwork = false,
+            )
+        val first = signature("First lyric line")
+        assertEquals(first, signature("Second lyric line"))
+        assertNotEquals(first, signature("First lyric line", mediaId = "song-43"))
+
+        val albumIdentity = MediaMetadataHelper.trackIdentitySignature(
+            packageName = "com.example.player",
+            mediaId = "",
+            title = "First lyric line",
+            artist = "Artist",
+            album = "Album",
+            duration = 180_000L,
+            hasDirectArtwork = false,
+        )
+        assertEquals(
+            albumIdentity,
+            MediaMetadataHelper.trackIdentitySignature(
+                packageName = "com.example.player",
+                mediaId = "",
+                title = "Second lyric line",
+                artist = "Artist",
+                album = "Album",
+                duration = 180_000L,
+                hasDirectArtwork = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `track identity changes when artist album duration or artwork arrives`() {
+        fun signature(
+            artist: String = "Artist",
+            album: String = "Album",
+            duration: Long = 180_000L,
+            hasDirectArtwork: Boolean = false,
+        ) = MediaMetadataHelper.trackIdentitySignature(
+            packageName = "com.example.player",
+            mediaId = "",
+            title = "Song",
+            artist = artist,
+            album = album,
+            duration = duration,
+            hasDirectArtwork = hasDirectArtwork,
+        )
+        val base = signature()
+        assertNotEquals(base, signature(artist = "Another artist"))
+        assertNotEquals(base, signature(album = "Another album"))
+        assertNotEquals(base, signature(duration = 181_000L))
+        assertNotEquals(base, signature(hasDirectArtwork = true))
+    }
+
+    @Test
+    fun `missing media identity yields no signature`() {
+        assertNull(
+            MediaMetadataHelper.trackIdentitySignature(
+                packageName = "com.example.player",
+                mediaId = "",
+                title = "",
+                artist = "",
+                album = "Album only",
+                duration = 180_000L,
+                hasDirectArtwork = true,
+            )
+        )
+    }
 }
