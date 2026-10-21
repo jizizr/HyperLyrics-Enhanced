@@ -19,7 +19,9 @@ internal object IslandTouchMediaActions {
     private const val TAG = "IslandTouch"
 
     fun controller(context: Context, packageName: String): MediaController? {
-        val candidates = context.getSystemService(MediaSessionManager::class.java)?.getActiveSessions(null)
+        // The controller keeps this Context's package name for every transport call it sends.
+        val candidates = IslandTouchSystemUiContext.resolve(context)
+            .getSystemService(MediaSessionManager::class.java)?.getActiveSessions(null)
             ?.filter { it.packageName == packageName }.orEmpty()
         if (candidates.size <= 1) return candidates.firstOrNull()
         // playbackState can cross Binder: snapshot once per candidate, not per comparison.
@@ -35,7 +37,7 @@ internal object IslandTouchMediaActions {
             binding.action == IslandTouchAction.OPEN_APP_FREEFORM ||
             binding.action == IslandTouchAction.VOLUME_CONTINUOUS) return false
         var threw = false
-        if (BuildConfig.DEBUG) logDispatchStart(packageName, controller, binding)
+        if (BuildConfig.DEBUG) logDispatchStart(context, packageName, controller, binding)
         val dispatched = runCatching {
             when (binding.action) {
                 IslandTouchAction.NONE, IslandTouchAction.EXPAND_ISLAND, IslandTouchAction.OPEN_APP_FREEFORM,
@@ -64,7 +66,8 @@ internal object IslandTouchMediaActions {
                         if (binding.action == IslandTouchAction.TOGGLE_MUTE) return@runCatching false
                         controller.adjustVolume(direction, AudioManager.FLAG_SHOW_UI)
                     } else {
-                        val audio = context.getSystemService(AudioManager::class.java) ?: return@runCatching false
+                        val audio = IslandTouchSystemUiContext.resolve(context)
+                            .getSystemService(AudioManager::class.java) ?: return@runCatching false
                         audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
                     }
                 }
@@ -114,9 +117,10 @@ internal object IslandTouchMediaActions {
         return dispatched
     }
 
-    private fun logDispatchStart(packageName: String, controller: MediaController?, binding: IslandTouchBinding) {
+    private fun logDispatchStart(context: Context, packageName: String, controller: MediaController?, binding: IslandTouchBinding) {
         val state = runCatching { controller?.playbackState }.getOrNull()
         HookLogger.d(TAG, "派发动作: action=${binding.action} pkg=$packageName controller=${controller != null} " +
+            "hostCtx=${context.packageName} mediaCtx=${IslandTouchSystemUiContext.resolve(context).packageName} " +
             "state=${state?.state} actions=0x${java.lang.Long.toHexString(state?.actions ?: 0L)}")
     }
 
