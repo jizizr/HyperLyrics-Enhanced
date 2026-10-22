@@ -256,13 +256,17 @@ class OfficialProviderCatalogTest {
             available = true,
             versionName = "1.0.10",
             versionCode = 11,
+            assetUrl = "https://github.com/juren233/HLE-Providers/releases/download/v11/qqmusic.hlp",
+            sha256 = "a".repeat(64),
         )
+        val selectedRelease = ProviderReleaseSelection.asTopLevelRelease(entry)
         val normalItem = OfficialProviderItem(
             catalog = entry,
             installedVersionCode = 10,
             installedVersionName = "1.0.9",
             enabled = true,
             needsRepair = false,
+            selectedRelease = selectedRelease,
         )
         assertTrue(normalItem.installed)
         assertTrue(normalItem.updateAvailable)
@@ -274,6 +278,7 @@ class OfficialProviderCatalogTest {
             installedVersionName = "1.0.9",
             enabled = true,
             needsRepair = true,
+            selectedRelease = selectedRelease,
         )
         assertTrue(damagedItem.installed)
         assertFalse(damagedItem.updateAvailable)

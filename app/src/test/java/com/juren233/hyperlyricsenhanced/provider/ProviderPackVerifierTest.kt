@@ -118,6 +118,50 @@ class ProviderPackVerifierTest {
     }
 
     @Test
+    fun rejectsPackWithPluginApiVersionAboveTheSupportedRange() {
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                pluginApiVersion = OfficialProviderCatalog.PLUGIN_API_VERSION + 1,
+            ),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider 插件 API 不兼容", exception.message)
+    }
+
+    @Test
+    fun rejectsPackWithPluginApiVersionBelowTheSupportedRange() {
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                pluginApiVersion = OfficialProviderCatalog.PLUGIN_API_MIN_SUPPORTED - 1,
+            ),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider 插件 API 不兼容", exception.message)
+    }
+
+    @Test
+    fun acceptsPackAtTheMinimumSupportedPluginApiVersion() {
+        // 测试无法构造合法签名：校验推进到签名一步失败，说明 API 范围检查放行。
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                pluginApiVersion = OfficialProviderCatalog.PLUGIN_API_MIN_SUPPORTED,
+                classesSha256 = dexSha256(),
+            ),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider Pack 签名无效", exception.message)
+    }
+
+    @Test
     fun toleratesManifestFieldsAddedByNewerReleases() {
         val manifestJson = json.encodeToString(
             defaultManifest().copy(

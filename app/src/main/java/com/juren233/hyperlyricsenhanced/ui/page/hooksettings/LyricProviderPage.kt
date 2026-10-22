@@ -50,10 +50,12 @@ import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderAcquisitionLog
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderHealthStore
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderInstaller
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderUiState
+import com.juren233.hyperlyricsenhanced.root.utils.ShellUtils
 import com.juren233.hyperlyricsenhanced.ui.component.ProComponent
 import com.juren233.hyperlyricsenhanced.ui.component.SuperSwitchPreference
 import com.juren233.hyperlyricsenhanced.ui.component.TagComponent
@@ -131,6 +133,8 @@ fun LyricProviderPage() {
         R.string.provider_repair_success_system_ui,
     )
     val removeSuccessMessage = stringResource(R.string.provider_remove_success)
+    val applyNowSuccessMessage = stringResource(R.string.provider_apply_now_success)
+    val applyNowFailedMessage = stringResource(R.string.provider_apply_now_failed)
     val unknownText = stringResource(R.string.unknown)
     val updateFailedFormat = stringResource(R.string.provider_update_failed)
     val repairFailedFormat = stringResource(R.string.provider_repair_failed)
@@ -280,6 +284,29 @@ fun LyricProviderPage() {
         }
     }
 
+    // 目标进程只在启动时加载插件；更新后目标应用仍在运行旧版本，这里提供
+    // 强行停止目标应用让下次打开直接生效的入口（需要 root）。
+    val applyNowOfficialProvider: (OfficialProviderItem) -> Unit = { item ->
+        val targets = item.catalog.targetPackages.toList()
+        coroutineScope.launch {
+            val stopped = runCatching { ShellUtils.killAppProcesses(targets) }
+                .getOrDefault(false)
+            if (stopped) {
+                // 强停发生在目标进程「健康宽限期」内时会被算作一次崩溃计数，
+                // 趁手上有 root 把标记清掉，避免两次强停被误判成连续崩溃回退。
+                OfficialProviderHealthStore.clearLoadMarkers(item.catalog.id, targets)
+            }
+            OfficialProviderAcquisitionLog.info(
+                "插件立即生效${if (stopped) "完成" else "失败"}: id=${item.catalog.id} " +
+                    "targets=${targets.joinToString()}",
+            )
+            snackbarHostState.showSnackbar(
+                message = if (stopped) applyNowSuccessMessage else applyNowFailedMessage,
+                duration = SnackbarDuration.Custom(2500L),
+            )
+        }
+    }
+
     val removeOfficialProvider: (OfficialProviderItem) -> Unit = { item ->
         runCatching {
             OfficialProviderInstaller.delete(context, item.catalog.id)
@@ -288,7 +315,13 @@ fun LyricProviderPage() {
             }
         }.onSuccess {
             showRefreshFab = true
+            // 有 root 时顺带清掉目标 App filesDir 里该插件的全部状态
+            // （崩溃标记/坏版本/已加载版本），避免删除后重装继承旧的坏版本记录。
             coroutineScope.launch {
+                OfficialProviderHealthStore.clearAllPluginState(
+                    pluginId = item.catalog.id,
+                    targetPackages = item.catalog.targetPackages,
+                )
                 snackbarHostState.showSnackbar(
                     message = removeSuccessMessage,
                     duration = SnackbarDuration.Custom(2500L),
@@ -404,6 +437,7 @@ fun LyricProviderPage() {
                         onUpdateOfficial = updateOfficialProvider,
                         onRepairOfficial = repairOfficialProvider,
                         onRemoveOfficial = removeOfficialProvider,
+                        onApplyNowOfficial = applyNowOfficialProvider,
                         legacyProviderReleaseHome = legacyProviderReleaseHome,
                     )
                 }

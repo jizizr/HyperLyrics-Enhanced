@@ -8,6 +8,14 @@ package com.juren233.hyperlyricsenhanced.provider
 
 object OfficialProviderCatalog {
     const val PLUGIN_API_VERSION = 3
+
+    /**
+     * 主程序按范围校验插件 API 版本：Host 接口只加带默认实现的新方法时不升
+     * PLUGIN_API_VERSION（只提高插件的 minCoreVersionCode），因此旧 API 的
+     * 插件在新版主程序上仍然可用，精确等值校验会让它们被误判为不兼容。
+     */
+    const val PLUGIN_API_MIN_SUPPORTED = 3
+    val PLUGIN_API_SUPPORTED_RANGE: IntRange get() = PLUGIN_API_MIN_SUPPORTED..PLUGIN_API_VERSION
     const val CORE_PACKAGE_NAME = "com.juren233.hyperlyricsenhanced"
     const val APPLE_MUSIC_PACKAGE_NAME = "com.apple.android.music"
     const val SALT_PLAYER_PACKAGE_NAME = "com.salt.music"
@@ -175,6 +183,18 @@ object OfficialProviderCatalog {
 
     fun installedVersionNameKey(pluginId: String) =
         "key_official_provider_installed_version_name_$pluginId"
+
+    /** 上一版本号：崩溃回退时目标进程据此改载上一版插件包。 */
+    fun previousVersionKey(pluginId: String) =
+        "key_official_provider_previous_version_$pluginId"
+
+    /** 目标进程上报的坏版本号集合，选择更新候选时跳过。 */
+    fun badVersionsKey(pluginId: String) =
+        "key_official_provider_bad_versions_$pluginId"
+
+    /** 目标进程最近一次成功加载的版本号，插件页据此显示「重启后生效」。 */
+    fun loadedVersionKey(pluginId: String) =
+        "key_official_provider_loaded_version_$pluginId"
 
     fun remoteFileName(pluginId: String, versionCode: Int) =
         "hle-provider-$pluginId-$versionCode.hlp"

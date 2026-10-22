@@ -77,7 +77,9 @@ object ProviderPackVerifier {
         )
 
         require(manifest.schemaVersion == 1) { "不支持的 Provider Pack 格式" }
-        require(manifest.pluginApiVersion == OfficialProviderCatalog.PLUGIN_API_VERSION) {
+        require(
+            manifest.pluginApiVersion in OfficialProviderCatalog.PLUGIN_API_SUPPORTED_RANGE
+        ) {
             "Provider 插件 API 不兼容"
         }
         require(manifest.minCoreVersionCode <= coreVersionCode) {

@@ -127,4 +127,31 @@ object ShellUtils {
         }
     }
 
+    /**
+     * 以 root 执行脚本并返回 stdout 行；失败（无 root、脚本退出非零）返回 null。
+     * 供需要回读内容的调用方使用（插件目标进程状态读回）。
+     */
+    suspend fun execRootScriptLines(cmd: String, inputScript: String): List<String>? {
+        return withContext(Dispatchers.IO) {
+            var process: Process? = null
+            var os: DataOutputStream? = null
+            try {
+                process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
+                os = DataOutputStream(process.outputStream)
+                os.write(inputScript.toByteArray(Charsets.UTF_8))
+                os.writeBytes("\nexit\n")
+                os.flush()
+                val output = process.inputStream.bufferedReader()
+                    .use { reader -> reader.readText().lineSequence().toList() }
+                val exitCode = process.waitFor()
+                return@withContext if (exitCode == 0) output else null
+            } catch (_: Exception) {
+                return@withContext null
+            } finally {
+                try { os?.close() } catch (_: Exception) {}
+                process?.destroy()
+            }
+        }
+    }
+
 }

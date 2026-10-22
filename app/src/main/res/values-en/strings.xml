@@ -270,6 +270,14 @@
     <string name="provider_status_unavailable">Temporarily unavailable</string>
     <string name="provider_status_needs_repair">Needs repair · Missing or damaged file (v%1$s)</string>
     <string name="provider_salt_player_upgrade_hint">Recommended: upgrade Salt Player to 12.2.0 or later for plugin-free use. This plugin remains available for older Salt Player versions.</string>
+    <string name="provider_auto_update_title">Auto-update plugins</string>
+    <string name="provider_auto_update_summary">Enabled plugins update automatically in the background; changes take effect the next time the target app starts</string>
+    <string name="provider_status_restart_pending">Takes effect after the target app restarts</string>
+    <string name="provider_status_core_update_required">Newer version requires an app update</string>
+    <string name="provider_status_rolled_back">Rolled back to v%1$s</string>
+    <string name="provider_action_apply_now">Apply now (force-stop target app)</string>
+    <string name="provider_apply_now_success">Target app stopped. Reopen it to apply.</string>
+    <string name="provider_apply_now_failed">Failed to stop the target app. Restart it manually.</string>
     <string name="provider_action_download">Download</string>
     <string name="provider_action_update">Update</string>
     <string name="provider_action_repair">Repair</string>

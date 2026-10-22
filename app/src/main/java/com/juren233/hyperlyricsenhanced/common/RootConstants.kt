@@ -109,6 +109,15 @@ object RootConstants {
      */
     const val KEY_ACTIVE_MEDIA_SESSION_PACKAGES = "key_active_media_session_packages"
     const val KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX = "key_hook_lyricon_provider_delay_"
+
+    // --- 官方插件后台自动更新（HLE 插件化计划 1.3） ---
+    const val KEY_PROVIDER_AUTO_UPDATE = "key_provider_auto_update"
+    const val KEY_PROVIDER_AUTO_UPDATE_LAST_CHECK = "key_provider_auto_update_last_check"
+    const val DEFAULT_PROVIDER_AUTO_UPDATE = true
+
+    /** 目标进程插件状态快照的本地缓存（root 读回成功后写入，后台更新直接使用）。 */
+    const val KEY_PROVIDER_TARGET_STATE_CACHE = "key_provider_target_state_cache"
+
     const val KEY_HOOK_REMOVE_CJK_LYRIC_SPACES =
         "key_hook_remove_cjk_lyric_spaces"
 

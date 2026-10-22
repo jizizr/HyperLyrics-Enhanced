@@ -186,10 +186,38 @@ internal fun LazyListScope.providerSections(
     onUpdateOfficial: (OfficialProviderItem) -> Unit,
     onRepairOfficial: (OfficialProviderItem) -> Unit,
     onRemoveOfficial: (OfficialProviderItem) -> Unit,
+    onApplyNowOfficial: (OfficialProviderItem) -> Unit,
     legacyProviderReleaseHome: String,
 ) {
     item(key = "official_header") {
         SmallTitle(text = stringResource(R.string.title_official_provider_plugins))
+    }
+
+    item(key = "official_auto_update") {
+        var autoUpdateEnabled by remember {
+            mutableStateOf(
+                PrefsBridge.getBoolean(
+                    RootConstants.KEY_PROVIDER_AUTO_UPDATE,
+                    RootConstants.DEFAULT_PROVIDER_AUTO_UPDATE,
+                ),
+            )
+        }
+        Card(
+            modifier = Modifier
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
+                .fillMaxWidth(),
+        ) {
+            SuperSwitchPreference(
+                checked = autoUpdateEnabled,
+                onCheckedChange = { enabled ->
+                    autoUpdateEnabled = enabled
+                    PrefsBridge.putBoolean(RootConstants.KEY_PROVIDER_AUTO_UPDATE, enabled)
+                },
+                title = stringResource(R.string.provider_auto_update_title),
+                summary = stringResource(R.string.provider_auto_update_summary),
+            )
+        }
     }
 
     item(key = "builtin_apple_music") {
@@ -289,9 +317,25 @@ internal fun LazyListScope.providerSections(
                                 append(
                                     stringResource(
                                         R.string.provider_status_update_available,
-                                        item.catalog.versionName ?: stringResource(R.string.unknown),
+                                        item.updateVersionName ?: stringResource(R.string.unknown),
                                     ),
                                 )
+                            }
+                            if (!busy && item.coreUpdateRequired && !item.updateAvailable) {
+                                append(" · ")
+                                append(stringResource(R.string.provider_status_core_update_required))
+                            }
+                            if (!busy && item.rolledBack) {
+                                append(" · ")
+                                append(
+                                    stringResource(
+                                        R.string.provider_status_rolled_back,
+                                        item.rolledBackVersionName ?: stringResource(R.string.unknown),
+                                    ),
+                                )
+                            } else if (!busy && item.restartPending) {
+                                append(" · ")
+                                append(stringResource(R.string.provider_status_restart_pending))
                             }
                             providerDescription?.takeIf(String::isNotBlank)?.let { description ->
                                 append("\n")
@@ -322,6 +366,11 @@ internal fun LazyListScope.providerSections(
                             },
                             onRemove = if (!busy) {
                                 { onRemoveOfficial(item) }
+                            } else {
+                                null
+                            },
+                            onApplyNow = if (item.restartPending && !busy) {
+                                { onApplyNowOfficial(item) }
                             } else {
                                 null
                             },
@@ -475,6 +524,7 @@ internal fun ProviderDelayEditor(
     onUpdate: (() -> Unit)? = null,
     onRepair: (() -> Unit)? = null,
     onRemove: (() -> Unit)?,
+    onApplyNow: (() -> Unit)? = null,
 ) {
     val editorState = if (state != null) {
         state
@@ -535,8 +585,18 @@ internal fun ProviderDelayEditor(
                 keyPoints = listOf(-5000f, -4000f, -3000f, -2000f, -1000f, 0f, 1000f, 2000f, 3000f, 4000f, 5000f),
                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
             )
-            if (onUpdate != null || onRepair != null || onRemove != null) {
+            if (onUpdate != null || onRepair != null || onRemove != null || onApplyNow != null) {
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+            if (onApplyNow != null) {
+                TextButton(
+                    text = stringResource(R.string.provider_action_apply_now),
+                    onClick = onApplyNow,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (onUpdate != null || onRepair != null || onRemove != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
             if (onUpdate != null) {
                 TextButton(

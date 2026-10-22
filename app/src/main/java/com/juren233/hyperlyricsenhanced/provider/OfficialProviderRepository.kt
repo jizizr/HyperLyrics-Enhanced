@@ -38,7 +38,14 @@ data class ProviderCatalogEntry(
     val versionCode: Int? = null,
     val assetUrl: String? = null,
     val sha256: String? = null,
-)
+    // 旧 App 开启 ignoreUnknownKeys 会忽略这两个字段；顶层字段仍指向「最低仍支持
+    // 的主程序也能用的最新版」，保证旧 App 不会看到装不上的更新。
+    val releases: List<ProviderCatalogRelease> = emptyList(),
+    val revokedVersionCodes: List<Int> = emptyList(),
+) {
+    /** releases 格式下只要有任何发行版即视为已发布。 */
+    val published: Boolean get() = available || releases.isNotEmpty()
+}
 
 data class OfficialProviderItem(
     val catalog: ProviderCatalogEntry,
@@ -46,10 +53,22 @@ data class OfficialProviderItem(
     val installedVersionName: String?,
     val enabled: Boolean,
     val needsRepair: Boolean = false,
+    val selectedRelease: ProviderCatalogRelease? = null,
+    val coreUpdateRequired: Boolean = false,
+    val badVersionCodes: Set<Int> = emptySet(),
+    val restartPending: Boolean = false,
+    val rolledBack: Boolean = false,
+    val rolledBackVersionName: String? = null,
 ) {
     val installed: Boolean get() = installedVersionCode > 0
+
+    /** 存在比已装版本新的兼容候选（新目录读 releases，旧目录回退顶层字段）。 */
     val updateAvailable: Boolean
-        get() = installed && !needsRepair && (catalog.versionCode ?: 0) > installedVersionCode
+        get() = installed && !needsRepair && selectedRelease != null &&
+            selectedRelease.versionCode > installedVersionCode
+
+    val updateVersionName: String?
+        get() = selectedRelease?.versionName ?: catalog.versionName
 }
 
 data class OfficialProviderUiState(
@@ -158,7 +177,10 @@ object OfficialProviderRepository {
             }
         }
 
-    suspend fun loadItems(context: Context? = null): List<OfficialProviderItem> {
+    suspend fun loadItems(
+        context: Context? = null,
+        includeTargetState: Boolean = true,
+    ): List<OfficialProviderItem> {
         val catalog = fetchVerifiedCatalog(context)
         val document = json.decodeFromString<ProviderCatalogDocument>(
             catalog.catalogBytes.toString(Charsets.UTF_8),
@@ -185,6 +207,14 @@ object OfficialProviderRepository {
             require(definition.id in entriesById) {
                 "Provider 目录与内置允许列表不一致"
             }
+        }
+
+        // 目标进程状态需要 root 读回：界面流程（includeTargetState=true）读回并
+        // 刷新本地缓存；后台自动更新只读缓存，避免未授予 root 时反复弹授权。
+        val targetState = if (includeTargetState) {
+            OfficialProviderHealthStore.readFresh()
+        } else {
+            OfficialProviderHealthStore.persisted()
         }
 
         return OfficialProviderCatalog.definitions.map { definition ->
@@ -217,6 +247,25 @@ object OfficialProviderRepository {
                 )
             }
             val needsRepair = installedVersionCode > 0 && context != null && installedManifest == null
+            val badVersionCodes = targetState.badVersionsByPlugin[definition.id].orEmpty()
+            val selectedRelease = ProviderReleaseSelection.selectLatestCompatible(
+                entry = entry,
+                coreVersionCode = BuildConfig.VERSION_CODE,
+                badVersionCodes = badVersionCodes,
+            )
+            val coreUpdateRequired = installedVersionCode > 0 &&
+                ProviderReleaseSelection.coreUpdateRequired(
+                    entry = entry,
+                    installedVersionCode = installedVersionCode,
+                    coreVersionCode = BuildConfig.VERSION_CODE,
+                    badVersionCodes = badVersionCodes,
+                )
+            val applyBadge = ProviderApplyState.badge(
+                installedVersionCode = installedVersionCode,
+                loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0,
+                badVersionCodes = badVersionCodes,
+            )
+            val loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0
             OfficialProviderItem(
                 catalog = entry,
                 installedVersionCode = installedVersionCode,
@@ -226,6 +275,15 @@ object OfficialProviderRepository {
                     false,
                 ),
                 needsRepair = needsRepair,
+                selectedRelease = selectedRelease,
+                coreUpdateRequired = coreUpdateRequired,
+                badVersionCodes = badVersionCodes,
+                restartPending = applyBadge == ProviderApplyState.Badge.RESTART_PENDING,
+                rolledBack = applyBadge == ProviderApplyState.Badge.ROLLED_BACK,
+                rolledBackVersionName = entry.releases
+                    .firstOrNull { it.versionCode == loadedVersionCode }
+                    ?.versionName
+                    ?: loadedVersionCode.takeIf { it > 0 }?.toString(),
             )
         }
     }
@@ -335,26 +393,42 @@ object OfficialProviderRepository {
     suspend fun downloadAndInstall(
         context: Context,
         item: OfficialProviderItem,
+        requireRemoteFile: Boolean = false,
     ): ProviderPackManifest {
         val entry = item.catalog
-        require(entry.available) { "该 Provider 尚未发布" }
-        val assetUrl = requireNotNull(entry.assetUrl)
-        validateAssetUrl(assetUrl)
-        val expectedSha256 = requireNotNull(entry.sha256)
+        // 新目录按 releases 挑选的候选优先；旧目录回退顶层字段。
+        val release = item.selectedRelease
+            ?: ProviderReleaseSelection.asTopLevelRelease(entry)
+            ?: throw IllegalArgumentException("该 Provider 尚未发布")
+        validateAssetUrl(release.assetUrl)
         OfficialProviderAcquisitionLog.info(
-            "插件安装开始: id=${entry.id} 目录版本=${entry.versionCode} " +
-                "targets=${entry.targetPackages.joinToString()}",
+            "插件安装开始: id=${entry.id} 目录版本=${release.versionCode} " +
+                "targets=${entry.targetPackages.joinToString()} " +
+                "来源=${if (item.selectedRelease != null) "releases" else "顶层字段"}",
         )
-        val packBytes = fetchPackWithMirrors(assetUrl, expectedSha256)
-        val installed = OfficialProviderInstaller.install(context, packBytes)
-        if (installed.pluginId != entry.id || installed.versionCode != entry.versionCode) {
+        val packBytes = fetchPackWithMirrors(release.assetUrl, release.sha256)
+        val installed = OfficialProviderInstaller.install(
+            context = context,
+            packBytes = packBytes,
+            requireRemoteFile = requireRemoteFile,
+        )
+        if (installed.pluginId != entry.id || installed.versionCode != release.versionCode) {
             OfficialProviderAcquisitionLog.error(
-                "插件与目录不一致: 目录(id=${entry.id} version=${entry.versionCode}) " +
+                "插件与目录不一致: 目录(id=${entry.id} version=${release.versionCode}) " +
                     "实际(id=${installed.pluginId} version=${installed.versionCode})",
             )
         }
         require(installed.pluginId == entry.id) { "下载的 Provider 与目录不一致" }
-        require(installed.versionCode == entry.versionCode) { "Provider 版本与目录不一致" }
+        require(installed.versionCode == release.versionCode) { "Provider 版本与目录不一致" }
+        // 仅界面触发的安装（requireRemoteFile=false）清目标进程残留状态（需要
+        // root，su）：重装是给这个版本一次新机会，旧的崩溃计数与坏版本记录都
+        // 不应继承。后台自动更新绝不调用 su，未授权 root 时不会弹授权。
+        if (!requireRemoteFile) {
+            OfficialProviderHealthStore.clearBadVersionMarks(
+                pluginId = installed.pluginId,
+                targetPackages = installed.targetPackages,
+            )
+        }
         OfficialProviderAcquisitionLog.info(
             "插件安装完成: id=${installed.pluginId} version=${installed.versionCode} " +
                 "name=${installed.versionName} bytes=${packBytes.size}",
@@ -366,14 +440,15 @@ object OfficialProviderRepository {
         context: Context,
         item: OfficialProviderItem,
     ): ProviderPackManifest {
-        val entry = if (item.catalog.available && item.catalog.assetUrl != null) {
-            item.catalog
+        val candidate = if (item.selectedRelease != null ||
+            (item.catalog.available && item.catalog.assetUrl != null)
+        ) {
+            item
         } else {
-            val items = loadItems(context)
-            items.firstOrNull { it.catalog.id == item.catalog.id }?.catalog
+            loadItems(context).firstOrNull { it.catalog.id == item.catalog.id }
                 ?: throw IllegalStateException("未在官方目录中找到该插件")
         }
-        return downloadAndInstall(context, item.copy(catalog = entry))
+        return downloadAndInstall(context, candidate)
     }
 
     fun setEnabled(pluginId: String, enabled: Boolean) {
@@ -401,6 +476,24 @@ object OfficialProviderRepository {
                 "未发布 Provider 不得声明下载地址"
             }
         }
+        validateReleases(entry)
+    }
+
+    private fun validateReleases(entry: ProviderCatalogEntry) {
+        require(
+            entry.releases.size == entry.releases.map { it.versionCode }.distinct().size,
+        ) { "Provider 目录发行版重复" }
+        entry.releases.forEach { release ->
+            require(release.versionCode > 0) { "Provider 目录发行版无效" }
+            require(!release.versionName.isNullOrBlank()) { "Provider 目录发行版无效" }
+            require(release.sha256.matches(Regex("[0-9a-f]{64}"))) { "Provider 目录发行版无效" }
+            validateAssetUrl(release.assetUrl)
+            require(release.pluginApiVersion > 0) { "Provider 目录发行版无效" }
+            require(release.minCoreVersionCode >= 0) { "Provider 目录发行版无效" }
+        }
+        require(
+            entry.revokedVersionCodes.size == entry.revokedVersionCodes.toSet().size,
+        ) { "Provider 目录撤回版本重复" }
     }
 
     private fun validateAssetUrl(url: String) {
