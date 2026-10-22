@@ -93,6 +93,54 @@ class IslandSlotRuntimeConfigTest {
     }
 
     @Test
+    fun `interlude minimal display follows live overrides and needs a visible native element`() {
+        val prefs = preferences(emptyMap())
+        val before = IslandSlotRuntimeConfig.from(prefs)
+        assertFalse(before.interludeMinimalDisplay)
+        assertFalse(before.usesInterludeMinimalDisplay(interludeActive = true))
+
+        IslandRuntimePreferenceOverrides.put(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+            true,
+        )
+        val enabled = IslandSlotRuntimeConfig.from(prefs)
+        assertTrue(enabled.interludeMinimalDisplay)
+        assertTrue(enabled.usesInterludeMinimalDisplay(interludeActive = true))
+        assertFalse(enabled.usesInterludeMinimalDisplay(interludeActive = false))
+
+        val withoutCoverOrRhythm = preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_LEFT_ALBUM to false,
+            RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON to false,
+        ))
+        assertFalse(
+            IslandSlotRuntimeConfig.from(withoutCoverOrRhythm)
+                .usesInterludeMinimalDisplay(interludeActive = true)
+        )
+    }
+
+    @Test
+    fun `next line preview is suppressed during interlude minimal display`() {
+        IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_NEXT_LYRIC_LINE, true)
+        val normalPrefs = preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to false,
+        ))
+        val normalConfig = IslandSlotRuntimeConfig.from(normalPrefs)
+        val minimalPrefs = preferences(mapOf(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY to true,
+        ))
+        val minimalConfig = IslandSlotRuntimeConfig.from(minimalPrefs)
+        assertTrue(normalConfig.nextLineEnabled)
+        assertTrue(minimalConfig.interludeMinimalDisplay)
+
+        assertTrue(IslandSlotContentAssembler.isNextLinePreviewEnabled(
+            normalPrefs, normalConfig, interludeActive = true
+        ))
+        assertFalse(IslandSlotContentAssembler.isNextLinePreviewEnabled(
+            minimalPrefs, minimalConfig, interludeActive = true
+        ))
+    }
+
+    @Test
     fun `automatic limit never reads manual widths including zero and tiny values`() {
         val prefs = widthPreferences(left = 0, right = 1, rejectManualReads = true)
         IslandRuntimePreferenceOverrides.put(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT, true)

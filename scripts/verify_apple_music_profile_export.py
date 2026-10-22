@@ -111,7 +111,7 @@ def matching_methods(ctx, target):
     return matched
 
 
-def verify_1607_semantics(ctx, points):
+def verify_1607_semantics(ctx, points, profile_id=''):
     """Reject same-signature targets with different native roles in this original beta."""
     errors = []
     checks = 0
@@ -172,9 +172,17 @@ def verify_1607_semantics(ctx, points):
                if owner == to_dex_type(observe['className']) and ret == to_dex_type(observe['returnTypeName'])
                for method in all_methods(ctx, binary_name(owner))
                if method.name == name and tuple(method.param_types) == params and method.return_type == ret]
-    require(any(helper.dex and any(name == 'isInitialized'
-                                  for _, name, _, _ in helper.dex.code_references(helper)['methods'])
-                for helper in helpers), '1607: observeAsState lost its initialization check')
+    if profile_id.endswith('-1613'):
+        # q3.b.c is the LiveData-without-initial overload; it delegates to q3.b.a,
+        # which allocates the Compose state through z0.S.h / z0.v1.
+        require(any(helper.dex and any(
+            ('z0/S;' in owner and name == 'h') or ('z0/v1;' in owner and name == '<init>')
+            for owner, name, _, _ in helper.dex.code_references(helper)['methods'])
+            for helper in helpers), '1613: observeAsState does not create the Compose state')
+    else:
+        require(any(helper.dex and any(name == 'isInitialized'
+                                      for _, name, _, _ in helper.dex.code_references(helper)['methods'])
+                    for helper in helpers), '1607: observeAsState lost its initialization check')
 
     preferences = one('APPLE_SHARED_PREFERENCES_CLASS')
     getter = dict(preferences, methodName=preferences['runtimeMemberNames']['LYRICS_PREFERENCES_TRANSLATION_GETTER'],
@@ -390,7 +398,7 @@ def verify_profile(ctx, profile):
         row_owner = row['parameterTypeNames'][1]
         names = row['runtimeMemberNames']
         key_owner = field(row_owner, names['ALBUM_COMPOSE_ROW_KEY_FIELD'],
-                          'D7.s' if profile['id'].endswith('-1611') else 'D7.q')
+                          'D7.s' if profile['id'].endswith(('-1611', '-1613')) else 'D7.q')
         if key_owner:
             field(key_owner, names['ALBUM_COMPOSE_KEY_ID_FIELD'], 'java.lang.String')
 
@@ -410,7 +418,7 @@ def verify_profile(ctx, profile):
         field(section, names['RADIO_SEARCH_ARTISTS_KIND_FIELD'], section)
         field(catalogue, names['RADIO_SEARCH_CATALOG_KIND_FIELD'], catalogue)
         method(scope, names['RADIO_SEARCH_SCOPE_CONTEXT_METHOD'], [],
-               'fi.f' if profile['id'].endswith('-1611') else 'fi.e', False)
+               'fi.f' if profile['id'].endswith(('-1611', '-1613')) else 'fi.e', False)
 
     names = ui['runtimeMemberNames']
     binding = field(ui['className'], names['LYRICS_UI_BINDING_FIELD'])
@@ -418,9 +426,19 @@ def verify_profile(ctx, profile):
     field(ui['className'], names['LYRICS_UI_VIEW_MODEL_FIELD'],
           'com.apple.android.music.player.viewmodel.PlayerLyricsViewModel')
     adapter = field(ui['className'], names['LYRICS_UI_ADAPTER_FIELD'])
-    for item in points['LYRICS_RECYCLER_ADAPTER']:
-        require(adapter in [c.binary_name for c in lineage(ctx, item['className'])],
-                f'{ui["className"]}: active adapter field does not accept {item["className"]}')
+    adapters = points['LYRICS_RECYCLER_ADAPTER']
+    if profile['id'].endswith('-1613'):
+        # 1613 moved the active-line adapter next to the word adapter as siblings,
+        # and the fragment field still references only the active-line one.
+        require(any(adapter in [c.binary_name for c in lineage(ctx, item['className'])]
+                    for item in adapters),
+                f'{ui["className"]}: active adapter field does not accept any of '
+                f'{[item["className"] for item in adapters]}')
+    else:
+        for item in adapters:
+            require(adapter in [c.binary_name for c in lineage(ctx, item['className'])],
+                    f'{ui["className"]}: active adapter field does not accept {item["className"]}')
+    for item in adapters:
         members = item['runtimeMemberNames']
         lines = method(item['className'], members['LYRICS_ADAPTER_LYRICS_METHOD'], [])
         if lines:
@@ -511,11 +529,12 @@ def verify_profile(ctx, profile):
                 for c in lineage(ctx, model['className']) for f in c.fields),
             f'{model["className"]}: not the ListenNow callback-bearing model')
     semantic_checks = 0
-    if profile['id'] in ('am-7.0.0-beta-1607', 'am-7.0.0-beta-1609', 'am-7.0.0-beta-1611'):
+    if profile['id'] in ('am-7.0.0-beta-1607', 'am-7.0.0-beta-1609',
+                         'am-7.0.0-beta-1611', 'am-7.0.0-beta-1613'):
         from verify_apple_music_1607_members import verify_consumer_members
         verify_consumer_members(ctx, points, field, method, require,
                                 version_code=int(profile['id'].rsplit('-', 1)[1]))
-        semantic_checks, semantic_errors = verify_1607_semantics(ctx, points)
+        semantic_checks, semantic_errors = verify_1607_semantics(ctx, points, profile['id'])
         errors.extend(semantic_errors)
     return dict(profile=profile['id'], groups=len(points), targets=checked, memberChecks=member_checks,
                 semanticChecks=semantic_checks, errors=errors,

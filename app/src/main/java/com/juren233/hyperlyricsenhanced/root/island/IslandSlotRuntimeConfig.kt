@@ -76,6 +76,7 @@ internal data class IslandSlotRuntimeConfig(
     val wordMotionLatinWave: Float,
     val dynamicLimitEnabled: Boolean = false,
     val shortLyricSongInfo: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+    val interludeMinimalDisplay: Boolean = RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
     val fullIslandNextLineMode: Int = IslandNextLineMode.resolve(IslandNextLineMode.UNSPECIFIED, nextLyricLine),
     val fontWeightMode: Int = IslandFontWeightMode.CUSTOM,
     val systemFontWeight: IslandSystemFontWeight.State? = null,
@@ -88,6 +89,10 @@ internal data class IslandSlotRuntimeConfig(
 
     val translationDisplay: Boolean
         get() = translationDisplayMode != RootConstants.TRANSLATION_PRONUNCIATION_DISPLAY_OFF
+
+    /** 极简显示依赖至少一个可见的原生元素；两者都关闭时保持常规内容，避免出现空岛。 */
+    fun usesInterludeMinimalDisplay(interludeActive: Boolean): Boolean =
+        interludeMinimalDisplay && (showAlbum || showRhythm) && interludeActive
 
     val isSingleSideMode: Boolean
         get() = activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE
@@ -428,6 +433,11 @@ internal data class IslandSlotRuntimeConfig(
                     prefs,
                     RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
                     RootConstants.DEFAULT_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+                ),
+                interludeMinimalDisplay = runtimeBoolean(
+                    prefs,
+                    RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+                    RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
                 ),
                 leftMode = if (activeMode == RootConstants.HOOK_LYRIC_MODE_SINGLE_SIDE) runtimeInt(
                     prefs,

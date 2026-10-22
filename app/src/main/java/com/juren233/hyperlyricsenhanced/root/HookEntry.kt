@@ -98,6 +98,7 @@ class HookEntry : XposedModule() {
 
         private val HYPER_ISLAND_RUNTIME_REFRESH_KEYS = setOf(
             RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_LEFT,
             RootConstants.KEY_HOOK_ISLAND_CONTENT_RIGHT,
             RootConstants.KEY_HOOK_ISLAND_LEFT_PADDING_LEFT,

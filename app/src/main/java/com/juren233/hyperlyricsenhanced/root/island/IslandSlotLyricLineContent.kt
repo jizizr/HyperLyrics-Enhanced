@@ -167,9 +167,11 @@ internal fun IslandSlotContentAssembler.applyLineRightAlignment(
 internal fun IslandSlotContentAssembler.isNextLinePreviewEnabled(
     prefs: SharedPreferences,
     config: IslandSlotRuntimeConfig,
-    currentLine: IRichLyricLine? = LyriconDataBridge.currentLyricLine
+    currentLine: IRichLyricLine? = LyriconDataBridge.currentLyricLine,
+    interludeActive: Boolean = LyriconDataBridge.currentInterludeType != null,
 ): Boolean {
     if (!config.nextLineEnabled) return false
+    if (config.usesInterludeMinimalDisplay(interludeActive)) return false
     if (LyriconDataBridge.isTextMode) return false
     val source = prefs.getString(RootConstants.KEY_HOOK_LYRIC_SOURCE, RootConstants.DEFAULT_HOOK_LYRIC_SOURCE)
     if (source != "lyricon" && source != "lyricinfo") return false

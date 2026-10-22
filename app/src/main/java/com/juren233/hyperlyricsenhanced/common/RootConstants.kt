@@ -124,6 +124,8 @@ object RootConstants {
     const val KEY_HOOK_ISLAND_ALBUM_COVER_STYLE = "key_hook_island_album_cover_style"
     const val KEY_HOOK_ISLAND_ALBUM_COVER_STYLE_APP_WHITELIST =
         "key_hook_island_album_cover_style_app_whitelist"
+    const val KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY =
+        "key_hook_island_interlude_minimal_display"
     const val KEY_HOOK_ISLAND_CONTENT_LEFT = "key_hook_island_content_left"
     const val KEY_HOOK_ISLAND_CONTENT_RIGHT = "key_hook_island_content_right"
     const val KEY_HOOK_ISLAND_LEFT_PADDING_LEFT = "key_hook_island_left_padding_left"
@@ -461,6 +463,7 @@ object RootConstants {
     const val ISLAND_ALBUM_COVER_STYLE_ROTATING_CIRCLE = 3
     const val ISLAND_ALBUM_COVER_STYLE_GRADIENT = 4
     const val DEFAULT_HOOK_ISLAND_ALBUM_COVER_STYLE = ISLAND_ALBUM_COVER_STYLE_DEFAULT
+    const val DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY = false
     const val DEFAULT_HOOK_MAX_LEFT_WIDTH = 100
     const val DEFAULT_HOOK_REMOVE_FOCUS_WHITELIST = false
     const val DEFAULT_HOOK_REMOVE_ISLAND_WHITELIST = false

@@ -465,7 +465,7 @@
     <string name="island_next_line_off">不显示</string>
     <string name="island_next_line_second_line">第二行</string>
     <string name="island_next_line_right">右侧</string>
-    <string name="summary_next_lyric_line">显示翻译时将不显示下句歌词</string>
+    <string name="summary_next_lyric_line">显示翻译与开启极简显示时不显示</string>
     <string name="title_aod_main_text_size">主句字号</string>
     <string name="title_aod_backing_text_size">伴唱字号</string>
     <string name="title_aod_translation_text_size">翻译字号</string>
@@ -594,6 +594,8 @@
     <string name="title_audio_cover">音频封面</string>
     <string name="title_audio_cover_style">音频封面样式</string>
     <string name="title_island_album_cover_app_whitelist">应用白名单</string>
+    <string name="title_island_interlude_minimal_display">前奏与间奏期间极简显示</string>
+    <string name="summary_island_interlude_minimal_display">仅保留左侧封面与右侧指示器</string>
     <string name="title_hide_audio_cover_source">隐藏音频封面的来源标识</string>
     <string name="title_hide_media_device_switch">隐藏设备切换按钮</string>
     <string name="option_audio_cover_style_default">默认</string>

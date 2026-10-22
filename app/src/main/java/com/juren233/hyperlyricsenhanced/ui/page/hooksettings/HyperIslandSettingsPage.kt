@@ -103,6 +103,12 @@ fun HyperIslandSettingsPage() {
         )
     }
     var audioRhythm by remember { mutableStateOf(prefs.getBoolean(RootConstants.KEY_HOOK_ISLAND_RIGHT_ICON, RootConstants.DEFAULT_HOOK_ISLAND_RIGHT_ICON)) }
+    var interludeMinimalDisplay by remember {
+        mutableStateOf(prefs.getBoolean(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+            RootConstants.DEFAULT_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY,
+        ))
+    }
     var shortLyricSongInfo by remember {
         mutableStateOf(prefs.getBoolean(
             RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO,
@@ -527,6 +533,16 @@ fun HyperIslandSettingsPage() {
                                     }
                                 }
                             }
+                            SwitchPreference(
+                                title = stringResource(R.string.title_island_interlude_minimal_display),
+                                summary = stringResource(R.string.summary_island_interlude_minimal_display),
+                                checked = interludeMinimalDisplay,
+                                enabled = audioCover || audioRhythm,
+                                onCheckedChange = {
+                                    interludeMinimalDisplay = it
+                                    saveConfig(RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY, it)
+                                },
+                            )
                             if (lyricMode == RootConstants.HOOK_LYRIC_MODE_FULL_ISLAND) {
                                 SwitchPreference(
                                     title = stringResource(R.string.title_island_short_lyric_song_info),

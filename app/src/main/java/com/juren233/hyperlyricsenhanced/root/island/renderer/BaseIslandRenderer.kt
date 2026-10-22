@@ -405,6 +405,8 @@ object BaseIslandRenderer : IslandRenderer {
                         }
                         return@post
                     }
+                    val config = IslandSlotRuntimeConfig.from(prefs)
+                    val interludeMinimal = IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)
                     if (indexedViews.isEmpty()) {
                         updateViewPosition(
                             cv.findViewWithTag(IslandProbeUtils.LEFT_TEST_VIEW_TAG),
@@ -420,8 +422,11 @@ object BaseIslandRenderer : IslandRenderer {
                     } else {
                         indexedViews.forEach { view -> updateViewPosition(view, position, isSeek) }
                     }
-                    IslandHostFacade.updateProgressGlow(cv, lyricPkg, prefs)
-                    val config = IslandSlotRuntimeConfig.from(prefs)
+                    if (interludeMinimal) {
+                        IslandProgressGlowController.clear(cv)
+                    } else {
+                        IslandHostFacade.updateProgressGlow(cv, lyricPkg, prefs)
+                    }
                     val previewChanged = updateEndOfSongPreview(
                         cv,
                         lyricPkg,
@@ -667,7 +672,11 @@ object BaseIslandRenderer : IslandRenderer {
         // 律动取色与歌词/光效同源：内容刷新即喂入最新媒体信息，切歌后颜色实时跟随
         IslandMusicWaveColorHooker.onMediaArtworkUpdated(mediaInfo)
         IslandHostFacade.updateHostGlow(cv, mediaInfo.albumArt, prefs)
-        IslandHostFacade.updateProgressGlow(cv, packageName, mediaInfo, prefs)
+        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)) {
+            IslandProgressGlowController.clear(cv)
+        } else {
+            IslandHostFacade.updateProgressGlow(cv, packageName, mediaInfo, prefs)
+        }
         val leftChanged = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
         val rightChanged = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
         val previewChanged = updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)
@@ -682,6 +691,13 @@ object BaseIslandRenderer : IslandRenderer {
         val packageName = LyriconDataBridge.currentLyricPackageName.orEmpty()
         if (updateEndOfSongPreview(cv, packageName, prefs, config, LyriconDataBridge.currentPosition)) {
             return true
+        }
+        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)) {
+            // 换句路径也要处理非歌词槽，否则单侧模式下残留的歌曲信息不会被隐藏。
+            val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
+            val leftChanged = updateSlot(cv, IslandProbeUtils.LEFT_TEST_VIEW_TAG, config.leftMode, prefs, config, mediaInfo)
+            val rightChanged = updateSlot(cv, IslandProbeUtils.RIGHT_TEST_VIEW_TAG, config.rightMode, prefs, config, mediaInfo)
+            return leftChanged || rightChanged
         }
         if (config.adjacentBackgroundTranslation && config.supportsAdjacentBackgroundTranslation) {
             val mediaInfo = MediaMetadataHelper.getMediaInfo(cv.context, packageName, HookLogger)
@@ -827,6 +843,7 @@ object BaseIslandRenderer : IslandRenderer {
         config: IslandSlotRuntimeConfig,
         position: Long
     ): Boolean {
+        if (IslandSlotContentAssembler.isInterludeMinimalDisplayActive(config)) return false
         var previewState = synchronized(nextSongPreviewActive) {
             nextSongPreviewActive[cv]
         }

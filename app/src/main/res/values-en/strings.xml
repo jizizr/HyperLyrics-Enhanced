@@ -464,7 +464,7 @@
     <string name="island_next_line_off">Hidden</string>
     <string name="island_next_line_second_line">Second Line</string>
     <string name="island_next_line_right">Right Side</string>
-    <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown</string>
+    <string name="summary_next_lyric_line">The next lyric line is hidden while a translation is shown or minimal display is enabled</string>
     <string name="title_aod_main_text_size">Main Lyric Size</string>
     <string name="title_aod_backing_text_size">Backing-Vocal Text Size</string>
     <string name="title_aod_translation_text_size">Translation Size</string>
@@ -592,6 +592,8 @@
     <string name="title_audio_cover">Audio Cover</string>
     <string name="title_audio_cover_style">Audio Cover Style</string>
     <string name="title_island_album_cover_app_whitelist">App Whitelist</string>
+    <string name="title_island_interlude_minimal_display">Minimal display during intro &amp; interlude</string>
+    <string name="summary_island_interlude_minimal_display">Keep only the left cover and the right indicator</string>
     <string name="title_hide_audio_cover_source">Hide Cover Source Badge</string>
     <string name="title_hide_media_device_switch">Hide Device Switch Button</string>
     <string name="option_audio_cover_style_default">Default</string>

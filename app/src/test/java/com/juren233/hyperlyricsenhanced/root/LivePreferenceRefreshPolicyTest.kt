@@ -33,6 +33,13 @@ class LivePreferenceRefreshPolicyTest {
     fun `short lyric song info toggle refreshes SystemUI immediately`() {
         assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_ISLAND_SHORT_LYRIC_SONG_INFO))
     }
+
+    @Test
+    fun `interlude minimal display toggle refreshes SystemUI immediately`() {
+        assertTrue(LivePreferenceRefreshPolicy.contains(
+            RootConstants.KEY_HOOK_ISLAND_INTERLUDE_MINIMAL_DISPLAY
+        ))
+    }
     @Test
     fun `dynamic limit toggle refreshes SystemUI immediately`() {
         assertTrue(LivePreferenceRefreshPolicy.contains(RootConstants.KEY_HOOK_ISLAND_DYNAMIC_LIMIT))

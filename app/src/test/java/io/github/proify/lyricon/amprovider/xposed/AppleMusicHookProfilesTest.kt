@@ -619,7 +619,7 @@ class AppleMusicHookProfilesTest {
         val version = AppleMusicVersion("7.0.0-beta", 1608L)
 
         assertEquals(
-            listOf("com.airbnb.epoxy.J", "com.airbnb.epoxy.K"),
+            listOf("com.airbnb.epoxy.K", "com.airbnb.epoxy.J"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.EPOXY_FINAL_BIND,
@@ -634,6 +634,7 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
+                "com.apple.android.music.utils.l1",
                 "com.apple.android.music.utils.f1",
                 "com.apple.android.music.utils.g1",
                 "com.apple.android.music.utils.i1",
@@ -648,14 +649,14 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className).distinct(),
         )
         assertEquals(
-            listOf("q8.q7", "q8.r7", "q8.t7", "n7.h8", "l7.f8", "l7.e8"),
+            listOf("q8.r7", "q8.q7", "q8.t7", "n7.h8", "l7.f8", "l7.e8"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.IN_APP_ACTION_SHEET_BINDING,
             ).map(AppleMusicHookTarget::className).distinct(),
         )
         assertEquals(
-            listOf("z0.v0", "z0.t0", "z0.r0", "z0.p0", "z0.s0"),
+            listOf("z0.r0", "z0.v0", "z0.t0", "z0.p0", "z0.s0"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.COMPOSE_NEVER_EQUAL_POLICY,
@@ -663,8 +664,9 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
-                "com.apple.android.music.player.y",
+                "com.apple.android.music.player.x",
                 "com.apple.android.music.player.S0",
+                "com.apple.android.music.player.y",
                 "com.apple.android.music.player.A",
                 "com.apple.android.music.player.R0",
                 "com.apple.android.music.player.C",
@@ -679,7 +681,7 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className).distinct(),
         )
         assertEquals(
-            listOf("A1.E", "A1.q", "A1.F", "A1.r", "A1.D", "z1.x", "z1.m", "z1.q", "z1.i", "z1.k", "z1.s", "z1.l", "z1.t"),
+            listOf("A1.F", "A1.r", "A1.E", "A1.q", "A1.D", "z1.x", "z1.m", "z1.q", "z1.i", "z1.k", "z1.s", "z1.l", "z1.t"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.COMPOSE_TEXT_LAYOUT,
@@ -694,6 +696,7 @@ class AppleMusicHookProfilesTest {
         )
         assertEquals(
             listOf(
+                "com.apple.android.music.common.P",
                 "com.apple.android.music.common.O",
                 "com.apple.android.music.common.L",
                 "com.apple.android.music.common.I",
@@ -705,7 +708,7 @@ class AppleMusicHookProfilesTest {
             ).map(AppleMusicHookTarget::className).distinct(),
         )
         assertEquals(
-            listOf("com.apple.android.music.player.c", "com.apple.android.music.player.d", "com.apple.android.music.player.f", "com.apple.android.music.player.e"),
+            listOf("com.apple.android.music.player.e", "com.apple.android.music.player.c", "com.apple.android.music.player.d", "com.apple.android.music.player.f"),
             AppleMusicHookProfiles.candidates(
                 version,
                 AppleMusicHookPoint.IN_APP_GLOBAL_METADATA_DISPATCHER,

@@ -8,12 +8,14 @@ The checks establish member compatibility, not execution or visual acceptance.
 
 
 def verify_consumer_members(ctx, points, field, method, require, version_code=1607):
-    # Consumer roles are unchanged in 1609/1611; their Media3, lifecycle and Compose
+    # Consumer roles are unchanged in 1609/1611/1613; their Media3, lifecycle and Compose
     # binary types moved. Keep the old APK contracts isolated from the new maps.
     renamed = {
         1609: {'z3.v': 'z3.w', 'z0.y0': 'z0.A0', 'z0.o1': 'z0.r1',
                'androidx.lifecycle.G': 'androidx.lifecycle.H'},
         1611: {'z3.v': 'z3.w', 'z0.y0': 'z0.C0', 'z0.o1': 'z0.s1',
+               'androidx.lifecycle.G': 'androidx.lifecycle.H'},
+        1613: {'z3.v': 'z3.w', 'z0.y0': 'z0.p1', 'z0.o1': 'z0.q1',
                'androidx.lifecycle.G': 'androidx.lifecycle.H'},
     }.get(version_code)
     if renamed:
@@ -49,7 +51,8 @@ def verify_consumer_members(ctx, points, field, method, require, version_code=16
     policy_type = field('z0.y0', state['LIBRARY_COMPOSE_STATE_POLICY_FIELD'], 'z0.o1')
     policy = ctx.find_class(one('COMPOSE_NEVER_EQUAL_POLICY')['className'])
     require(policy is not None and policy_type is not None and 'L' + policy_type.replace('.', '/') + ';'
-            in policy.interfaces, '1607: NeverEqualPolicy does not implement the state policy type')
+            in policy.interfaces,
+            f'{version_code}: NeverEqualPolicy does not implement the state policy type')
     method('z0.y0', state['LIBRARY_COMPOSE_STATE_GET_VALUE_METHOD'], [], 'java.lang.Object', False)
     method('z0.y0', state['LIBRARY_COMPOSE_STATE_SET_VALUE_METHOD'], ['java.lang.Object'], 'void', False)
 
