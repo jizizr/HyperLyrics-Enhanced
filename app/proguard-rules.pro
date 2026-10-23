@@ -50,6 +50,9 @@
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodResultCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorCallback { *; }
 -keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexMethodsCallback { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderCall { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderInterceptor { *; }
+-keep interface com.juren233.hyperlyricsenhanced.provider.OfficialProviderHookHandle { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderMethodTarget { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderConstructorTarget { *; }
 -keep class com.juren233.hyperlyricsenhanced.provider.OfficialProviderDexTypeSource { *; }
@@ -69,6 +72,10 @@
 # provider runtime and lyric models that Pack bytecode resolves through the core class loader.
 -keep class io.github.proify.lyricon.provider.** { *; }
 -keep class io.github.proify.lyricon.lyric.model.** { *; }
+
+# OfficialProviderHost.openDexKit returns DexKitBridge; Packs compile against the same DexKit
+# version as compileOnly and resolve these classes through the core class loader.
+-keep class org.luckypray.dexkit.** { *; }
 
 # Lyricon registration and delivery cross process and class-loader boundaries through AIDL,
 # Binder descriptors, Parcelable models and broadcast receivers. The upstream AARs currently

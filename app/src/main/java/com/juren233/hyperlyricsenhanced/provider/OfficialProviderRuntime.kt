@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import dalvik.system.InMemoryDexClassLoader
 import io.github.libxposed.api.XposedModule
@@ -177,13 +178,23 @@ object OfficialProviderRuntime {
             "开始加载官方 Provider: id=${definition.id} package=$packageName " +
                 "version=$expectedVersion file=$remoteName",
         )
+        val readStartNs = System.nanoTime()
         val packBytes = ParcelFileDescriptor.AutoCloseInputStream(
             module.openRemoteFile(remoteName),
         ).use { it.readBytes() }
+        val readNs = System.nanoTime() - readStartNs
+        val verificationCache = runCatching {
+            module.getRemotePreferences(UIConstants.PREF_NAME)
+                .getString(OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY, null)
+        }.getOrNull()
+        val verifyStartNs = System.nanoTime()
         val verified = ProviderPackVerifier.verify(
             packBytes = packBytes,
             expectedTargetPackage = packageName,
+            verificationCache = verificationCache,
+            verificationCacheKey = remoteName,
         )
+        val verifyNs = System.nanoTime() - verifyStartNs
         require(verified.manifest.pluginId == definition.id) {
             "Provider Pack ID 与目录不一致: expected=${definition.id}, " +
                 "actual=${verified.manifest.pluginId}"
@@ -192,8 +203,9 @@ object OfficialProviderRuntime {
             "Provider Pack 版本与已安装记录不一致: expected=$expectedVersion, " +
                 "actual=${verified.manifest.versionCode}"
         }
+        val loaderStartNs = System.nanoTime()
         val pluginLoader = InMemoryDexClassLoader(
-            ByteBuffer.wrap(verified.classesDex),
+            verified.dexFiles.map { ByteBuffer.wrap(it) }.toTypedArray(),
             OfficialProviderRuntime::class.java.classLoader,
         )
         val entryClass = pluginLoader.loadClass(verified.manifest.entryClass)
@@ -202,6 +214,7 @@ object OfficialProviderRuntime {
         }.getOrElse {
             entryClass.getDeclaredConstructor().newInstance()
         }
+        val loaderNs = System.nanoTime() - loaderStartNs
         require(plugin is OfficialProviderPlugin) {
             "Provider 入口未实现官方插件 API"
         }
@@ -211,12 +224,25 @@ object OfficialProviderRuntime {
             packageName = packageName,
             processName = processName,
         )
+        val installStartNs = System.nanoTime()
         plugin.install(host)
+        val installNs = System.nanoTime() - installStartNs
         host.logInstalled(definition.id)
         loadedPackages += packageName
         store?.writeLoadedVersion(definition.id, expectedVersion)
         if (scheduleMarkerClear) {
             scheduleMarkerClear(store, definition.id)
+        }
+        if (BuildConfig.DEBUG) {
+            module.log(
+                Log.INFO,
+                TAG,
+                "官方 Provider 加载耗时: id=${definition.id} package=$packageName " +
+                    "readUs=${readNs / 1_000} verifyUs=${verifyNs / 1_000} " +
+                    "cacheHit=${verified.verificationCacheHit} dex=${verified.dexFiles.size} " +
+                    "loaderUs=${loaderNs / 1_000} installUs=${installNs / 1_000} " +
+                    "hooks=${host.hookInstallCount()} hookUs=${host.hookInstallDurationNanos() / 1_000}",
+            )
         }
         module.log(
             Log.INFO,

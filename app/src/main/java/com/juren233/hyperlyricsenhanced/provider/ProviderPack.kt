@@ -32,11 +32,19 @@ data class ProviderPackManifest(
     val providerPackageName: String,
     val targetPackages: List<String>,
     val classesSha256: String,
+    /**
+     * 每个 DEX 条目的摘要，键为 classes.dex / classes2.dex…。
+     *
+     * 旧包没有该字段，只含 classes.dex；新包由 build_provider_pack.py 写入。
+     */
+    val dexSha256: Map<String, String> = emptyMap(),
 )
 
 data class VerifiedProviderPack(
     val manifest: ProviderPackManifest,
-    val classesDex: ByteArray,
+    val dexFiles: List<ByteArray>,
+    val packSha256: String,
+    val verificationCacheHit: Boolean,
 )
 
 object ProviderPackVerifier {
@@ -48,8 +56,11 @@ object ProviderPackVerifier {
     private const val MAX_MANIFEST_BYTES = 64 * 1024
     private const val MAX_DEX_BYTES = 12 * 1024 * 1024
     private const val MAX_SIGNATURE_BYTES = 256
+    private const val MAX_DEX_FILES = 10
+    private const val MAX_TOTAL_DEX_BYTES = 48 * 1024 * 1024
     private const val SIGNATURE_SEPARATOR: Byte = 0
-    private val allowedEntries = setOf(MANIFEST_ENTRY, DEX_ENTRY, SIGNATURE_ENTRY)
+    private val nonDexEntries = setOf(MANIFEST_ENTRY, SIGNATURE_ENTRY)
+    private val extraDexEntry = Regex("^classes([2-9][0-9]*)\\.dex$")
     private val json = Json {
         // 新版 Pack 的清单可能新增字段；旧版 App 忽略未知字段而不是拒绝整个 Pack。
         // 真正的兼容边界由 schemaVersion / pluginApiVersion / minCoreVersionCode 承担。
@@ -64,18 +75,67 @@ object ProviderPackVerifier {
         packBytes: ByteArray,
         expectedTargetPackage: String? = null,
         coreVersionCode: Int = BuildConfig.VERSION_CODE,
+        verificationCache: String? = null,
+        verificationCacheKey: String? = null,
     ): VerifiedProviderPack {
         require(packBytes.size <= MAX_PACK_BYTES) { "Provider Pack 超过大小限制" }
+        val packSha256 = sha256(packBytes)
         val entries = readEntries(packBytes)
-        require(entries.keys == allowedEntries) { "Provider Pack 文件集合无效" }
-
         val manifestBytes = requireNotNull(entries[MANIFEST_ENTRY])
-        val classesDex = requireNotNull(entries[DEX_ENTRY])
         val signatureBytes = requireNotNull(entries[SIGNATURE_ENTRY])
-        val manifest = json.decodeFromString<ProviderPackManifest>(
-            manifestBytes.toString(Charsets.UTF_8),
-        )
+        val dexEntries = orderedDexEntries(entries)
+        require(dexEntries.isNotEmpty()) { "Provider Pack 缺少 classes.dex" }
+        require(dexEntries.size <= MAX_DEX_FILES) { "Provider Pack DEX 文件过多" }
+        require(dexEntries.map { it.index } == (1..dexEntries.size).toList()) {
+            "Provider Pack DEX 文件编号不连续"
+        }
+        val dexFiles = dexEntries.map { it.bytes }
 
+        val cachedManifest = if (verificationCacheKey != null) {
+            ProviderPackVerificationCache.lookup(
+                cacheJson = verificationCache,
+                remoteName = verificationCacheKey,
+                packSha256 = packSha256,
+            )
+        } else {
+            null
+        }
+        val manifest = cachedManifest
+            ?: json.decodeFromString<ProviderPackManifest>(manifestBytes.toString(Charsets.UTF_8))
+        validateManifest(manifest, expectedTargetPackage, coreVersionCode)
+
+        if (cachedManifest == null) {
+            verifyDexDigests(manifest, dexEntries)
+            require(
+                verifyDetachedSignature(
+                    signaturePayload(manifestBytes, dexFiles),
+                    signatureBytes,
+                )
+            ) {
+                "Provider Pack 签名无效"
+            }
+        } else if (BuildConfig.DEBUG) {
+            runCatching {
+                Log.d(
+                    TAG,
+                    "Provider Pack 验签缓存命中: key=$verificationCacheKey " +
+                        "packSha256=${packSha256.take(12)}",
+                )
+            }
+        }
+        return VerifiedProviderPack(
+            manifest = manifest,
+            dexFiles = dexFiles,
+            packSha256 = packSha256,
+            verificationCacheHit = cachedManifest != null,
+        )
+    }
+
+    private fun validateManifest(
+        manifest: ProviderPackManifest,
+        expectedTargetPackage: String?,
+        coreVersionCode: Int,
+    ) {
         require(manifest.schemaVersion == 1) { "不支持的 Provider Pack 格式" }
         require(
             manifest.pluginApiVersion in OfficialProviderCatalog.PLUGIN_API_SUPPORTED_RANGE
@@ -115,42 +175,105 @@ object ProviderPackVerifier {
                 "Provider 与当前音乐软件不匹配"
             }
         }
+    }
 
-        require(sha256(classesDex).equals(manifest.classesSha256, ignoreCase = true)) {
-            "Provider DEX 摘要不匹配"
+    private fun verifyDexDigests(
+        manifest: ProviderPackManifest,
+        dexEntries: List<DexEntry>,
+    ) {
+        if (manifest.dexSha256.isEmpty()) {
+            require(dexEntries.size == 1) { "Provider Pack 缺少多 DEX 摘要" }
+            require(
+                sha256(dexEntries.single().bytes).equals(manifest.classesSha256, ignoreCase = true)
+            ) {
+                "Provider DEX 摘要不匹配"
+            }
+            return
+        }
+        require(manifest.dexSha256.keys == dexEntries.map { it.name }.toSet()) {
+            "Provider Pack DEX 摘要与文件集合不一致"
         }
         require(
-            verifyDetachedSignature(
-                manifestBytes + byteArrayOf(SIGNATURE_SEPARATOR) + classesDex,
-                signatureBytes,
-            )
+            manifest.dexSha256[DEX_ENTRY].orEmpty()
+                .equals(manifest.classesSha256, ignoreCase = true)
         ) {
-            "Provider Pack 签名无效"
+            "Provider Pack 主 DEX 摘要不一致"
         }
-        return VerifiedProviderPack(manifest, classesDex)
+        dexEntries.forEach { entry ->
+            require(
+                sha256(entry.bytes).equals(
+                    manifest.dexSha256[entry.name].orEmpty(),
+                    ignoreCase = true,
+                )
+            ) {
+                "Provider DEX 摘要不匹配: ${entry.name}"
+            }
+        }
+    }
+
+    private fun signaturePayload(
+        manifestBytes: ByteArray,
+        dexFiles: List<ByteArray>,
+    ): ByteArray {
+        val output = ByteArrayOutputStream(
+            manifestBytes.size + dexFiles.sumOf { it.size } + dexFiles.size,
+        )
+        output.write(manifestBytes)
+        dexFiles.forEach { dex ->
+            output.write(SIGNATURE_SEPARATOR.toInt())
+            output.write(dex)
+        }
+        return output.toByteArray()
     }
 
     private fun readEntries(packBytes: ByteArray): Map<String, ByteArray> {
         val result = linkedMapOf<String, ByteArray>()
+        var totalDexBytes = 0
         ZipInputStream(ByteArrayInputStream(packBytes)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
-                require(!entry.isDirectory && entry.name in allowedEntries) {
+                require(!entry.isDirectory && isAllowedEntry(entry.name)) {
                     "Provider Pack 包含不允许的文件"
                 }
                 require(result[entry.name] == null) { "Provider Pack 包含重复文件" }
                 val limit = when (entry.name) {
                     MANIFEST_ENTRY -> MAX_MANIFEST_BYTES
-                    DEX_ENTRY -> MAX_DEX_BYTES
                     SIGNATURE_ENTRY -> MAX_SIGNATURE_BYTES
-                    else -> error("unreachable")
+                    else -> MAX_DEX_BYTES
                 }
-                result[entry.name] = zip.readEntryBytes(limit)
+                val bytes = zip.readEntryBytes(limit)
+                if (dexIndex(entry.name) != null) {
+                    totalDexBytes += bytes.size
+                    require(totalDexBytes <= MAX_TOTAL_DEX_BYTES) {
+                        "Provider Pack DEX 总大小超过限制"
+                    }
+                }
+                result[entry.name] = bytes
                 zip.closeEntry()
             }
         }
         return result
     }
+
+    private fun isAllowedEntry(name: String): Boolean =
+        name in nonDexEntries || dexIndex(name) != null
+
+    private fun orderedDexEntries(entries: Map<String, ByteArray>): List<DexEntry> =
+        entries.mapNotNull { (name, bytes) ->
+            dexIndex(name)?.let { index -> DexEntry(index, name, bytes) }
+        }.sortedBy { it.index }
+
+    private fun dexIndex(name: String): Int? {
+        if (name == DEX_ENTRY) return 1
+        val match = extraDexEntry.matchEntire(name) ?: return null
+        return match.groupValues[1].toIntOrNull()
+    }
+
+    private data class DexEntry(
+        val index: Int,
+        val name: String,
+        val bytes: ByteArray,
+    )
 
     private fun ZipInputStream.readEntryBytes(limit: Int): ByteArray {
         val output = ByteArrayOutputStream()

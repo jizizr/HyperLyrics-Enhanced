@@ -176,17 +176,153 @@ class ProviderPackVerifierTest {
         assertEquals("Provider Pack 签名无效", exception.message)
     }
 
-    private fun dexSha256(): String =
+    @Test
+    fun acceptsMultiDexPackStructureThatThenFailsSignature() {
+        val dexFiles = linkedMapOf(
+            "classes.dex" to byteArrayOf(0x64, 0x65, 0x78),
+            "classes2.dex" to byteArrayOf(0x64, 0x65, 0x78, 0x32),
+        )
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                classesSha256 = sha256(dexFiles.getValue("classes.dex")),
+                dexSha256 = dexFiles.mapValues { (_, bytes) -> sha256(bytes) },
+            ),
+            dexFiles = dexFiles,
+        )
+
+        // 多 DEX 结构、逐 DEX 摘要都通过后才在签名一步失败
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider Pack 签名无效", exception.message)
+    }
+
+    @Test
+    fun rejectsMultiDexPackWithoutDexDigests() {
+        val dec = byteArrayOf(0x64, 0x65, 0x78)
+        val dec2 = byteArrayOf(0x64, 0x65, 0x78, 0x32)
+        val pack = zipPack(
+            manifest = defaultManifest().copy(classesSha256 = sha256(dec)),
+            dexFiles = linkedMapOf("classes.dex" to dec, "classes2.dex" to dec2),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider Pack 缺少多 DEX 摘要", exception.message)
+    }
+
+    @Test
+    fun rejectsMultiDexPackWithMismatchedExtraDexDigest() {
+        val dec = byteArrayOf(0x64, 0x65, 0x78)
+        val dec2 = byteArrayOf(0x64, 0x65, 0x78, 0x32)
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                classesSha256 = sha256(dec),
+                dexSha256 = mapOf(
+                    "classes.dex" to sha256(dec),
+                    "classes2.dex" to "0".repeat(64),
+                ),
+            ),
+            dexFiles = linkedMapOf("classes.dex" to dec, "classes2.dex" to dec2),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider DEX 摘要不匹配: classes2.dex", exception.message)
+    }
+
+    @Test
+    fun rejectsDexEntriesWithGaps() {
+        val dec = byteArrayOf(0x64, 0x65, 0x78)
+        val dec3 = byteArrayOf(0x64, 0x65, 0x78, 0x33)
+        val pack = zipPack(
+            manifest = defaultManifest().copy(
+                classesSha256 = sha256(dec),
+                dexSha256 = mapOf(
+                    "classes.dex" to sha256(dec),
+                    "classes3.dex" to sha256(dec3),
+                ),
+            ),
+            dexFiles = linkedMapOf("classes.dex" to dec, "classes3.dex" to dec3),
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider Pack DEX 文件编号不连续", exception.message)
+    }
+
+    @Test
+    fun rejectsUnexpectedDexFileName() {
+        val pack = zipPack(extraEntryName = "classes02.dex")
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(pack)
+        }
+        assertEquals("Provider Pack 包含不允许的文件", exception.message)
+    }
+
+    @Test
+    fun usesVerifiedCacheToSkipSignatureVerification() {
+        val manifest = defaultManifest().copy(classesSha256 = dexSha256())
+        val pack = zipPack(manifest = manifest)
+        val cache = ProviderPackVerificationCache.record(
+            cacheJson = null,
+            remoteName = "hle-provider-kuwo-1.hlp",
+            packSha256 = sha256(pack),
+            manifest = manifest,
+        )
+
+        val verified = ProviderPackVerifier.verify(
+            packBytes = pack,
+            verificationCache = cache,
+            verificationCacheKey = "hle-provider-kuwo-1.hlp",
+        )
+
+        assertTrue(verified.verificationCacheHit)
+        assertEquals(1, verified.manifest.versionCode)
+        assertEquals(1, verified.dexFiles.size)
+    }
+
+    @Test
+    fun ignoresCacheWhosePackDigestDoesNotMatch() {
+        val manifest = defaultManifest().copy(classesSha256 = dexSha256())
+        val pack = zipPack(manifest = manifest)
+        val cache = ProviderPackVerificationCache.record(
+            cacheJson = null,
+            remoteName = "hle-provider-kuwo-1.hlp",
+            packSha256 = "0".repeat(64),
+            manifest = manifest,
+        )
+
+        val exception = assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.verify(
+                packBytes = pack,
+                verificationCache = cache,
+                verificationCacheKey = "hle-provider-kuwo-1.hlp",
+            )
+        }
+        assertEquals("Provider Pack 签名无效", exception.message)
+    }
+
+    private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
-            .digest(byteArrayOf(0x64, 0x65, 0x78))
+            .digest(bytes)
             .joinToString("") { "%02x".format(it) }
+
+    private fun dexSha256(): String =
+        sha256(byteArrayOf(0x64, 0x65, 0x78))
 
     private fun zipPack(
         manifest: ProviderPackManifest = defaultManifest(),
         extraEntryName: String? = null,
         manifestJsonOverride: String? = null,
+        dexFiles: Map<String, ByteArray> = linkedMapOf(
+            "classes.dex" to byteArrayOf(0x64, 0x65, 0x78),
+        ),
     ): ByteArray {
-        val dex = byteArrayOf(0x64, 0x65, 0x78)
         val manifestBytes = manifestJsonOverride?.toByteArray(Charsets.UTF_8) ?: json.encodeToString(
             manifest.copy(
                 classesSha256 = manifest.classesSha256.ifBlank {
@@ -199,9 +335,11 @@ class ProviderPackVerifierTest {
                 zip.putNextEntry(ZipEntry("manifest.json"))
                 zip.write(manifestBytes)
                 zip.closeEntry()
-                zip.putNextEntry(ZipEntry("classes.dex"))
-                zip.write(dex)
-                zip.closeEntry()
+                dexFiles.forEach { (name, dex) ->
+                    zip.putNextEntry(ZipEntry(name))
+                    zip.write(dex)
+                    zip.closeEntry()
+                }
                 zip.putNextEntry(ZipEntry("signature.ed25519"))
                 zip.write(ByteArray(64))
                 zip.closeEntry()

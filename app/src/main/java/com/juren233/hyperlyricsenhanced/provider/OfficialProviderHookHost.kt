@@ -10,6 +10,7 @@ import android.app.Application
 import android.app.ActivityManager
 import android.app.Instrumentation
 import android.content.Context
+import android.content.SharedPreferences
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -30,6 +31,7 @@ import org.luckypray.dexkit.query.matchers.AnnotationElementMatcher
 import org.luckypray.dexkit.query.matchers.AnnotationMatcher
 import org.luckypray.dexkit.query.matchers.ClassMatcher
 import org.luckypray.dexkit.query.matchers.MethodMatcher
+import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Collections
@@ -39,6 +41,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 internal class OfficialProviderHookHost(
@@ -65,6 +68,8 @@ internal class OfficialProviderHookHost(
     } else {
         null
     }
+    private val hookNanos = AtomicLong(0L)
+    private val hookCount = AtomicInteger(0)
 
     private val handledApplications = Collections.synchronizedSet(
         Collections.newSetFromMap(WeakHashMap<Application, Boolean>()),
@@ -128,16 +133,20 @@ internal class OfficialProviderHookHost(
                 "callApplicationOnCreate",
                 Application::class.java,
             )
-            module.hook(method).intercept(
-                ApplicationCreatedHooker(this, callback),
-            )
+            timedHookInstall {
+                module.hook(method).intercept(
+                    ApplicationCreatedHooker(this, callback),
+                )
+            }
         }
 
         runCatching {
             val method = Application::class.java.getDeclaredMethod("onCreate")
-            module.hook(method).intercept(
-                ApplicationOnCreateHooker(this, callback),
-            )
+            timedHookInstall {
+                module.hook(method).intercept(
+                    ApplicationOnCreateHooker(this, callback),
+                )
+            }
         }
 
         module.log(
@@ -148,7 +157,61 @@ internal class OfficialProviderHookHost(
     }
 
     override fun getBooleanPreference(key: String, default: Boolean): Boolean =
-        module.getRemotePreferences(UIConstants.PREF_NAME).getBoolean(key, default)
+        getRemotePreferences(UIConstants.PREF_NAME)?.getBoolean(key, default) ?: default
+
+    override val coreVersionCode: Int
+        get() = BuildConfig.VERSION_CODE
+
+    override fun intercept(
+        executable: Executable,
+        interceptor: OfficialProviderInterceptor,
+    ): OfficialProviderHookHandle {
+        val descriptor = executable.toGenericString()
+        val handle = timedHookInstall {
+            module.hook(executable).intercept(
+                OfficialProviderInterceptHooker(
+                    interceptor = interceptor,
+                    onFirstCallback = {
+                        module.log(
+                            Log.INFO,
+                            tag,
+                            "官方 Provider 拦截 Hook 首次命中: target=$descriptor",
+                        )
+                    },
+                    onFallback = { error ->
+                        module.log(
+                            Log.ERROR,
+                            tag,
+                            "官方 Provider 拦截回调异常，已回退原调用结果: " +
+                                "target=$descriptor error=${error.message}",
+                        )
+                    },
+                ),
+            )
+        }
+        module.log(Log.INFO, tag, "官方 Provider 拦截 Hook 已安装: target=$descriptor")
+        return OfficialProviderHookHandle { runCatching { handle.unhook() } }
+    }
+
+    override fun deoptimize(executable: Executable): Boolean =
+        runCatching { module.deoptimize(executable) }.getOrDefault(false)
+
+    override fun getRemotePreferences(group: String): SharedPreferences? =
+        runCatching { module.getRemotePreferences(group) }.getOrNull()
+
+    override fun openDexKit(application: Application): DexKitBridge? = runCatching {
+        ensureDexKitLoaded(module)
+        DexKitBridge.create(application.applicationInfo.sourceDir).also { bridge ->
+            bridge.setThreadNum(Runtime.getRuntime().availableProcessors().coerceIn(1, 4))
+            bridge.setMaxConcurrentQueries(1)
+        }
+    }.onFailure { error ->
+        module.log(
+            Log.ERROR,
+            tag,
+            "官方 Provider DexKit 打开失败: package=$packageName error=${error.message}",
+        )
+    }.getOrNull()
 
     override fun hookMediaSession(
         playbackStateCallback: OfficialProviderPlaybackStateCallback,
@@ -164,31 +227,35 @@ internal class OfficialProviderHookHost(
             "setPlaybackState",
             PlaybackState::class.java,
         )
-        module.hook(setPlaybackState).intercept(
-            PlaybackStateHooker(
-                host = this,
-                module = module,
-                packageName = packageName,
-                processName = processName,
-                callback = playbackStateCallback,
-                metadataCallback = metadataCallback,
-                metadataGate = metadataGate,
-            ),
-        )
+        timedHookInstall {
+            module.hook(setPlaybackState).intercept(
+                PlaybackStateHooker(
+                    host = this,
+                    module = module,
+                    packageName = packageName,
+                    processName = processName,
+                    callback = playbackStateCallback,
+                    metadataCallback = metadataCallback,
+                    metadataGate = metadataGate,
+                ),
+            )
+        }
 
         val setMetadata = mediaSessionClass.getDeclaredMethod(
             "setMetadata",
             MediaMetadata::class.java,
         )
-        module.hook(setMetadata).intercept(
-            MetadataHooker(
-                host = this,
-                module = module,
-                packageName = packageName,
-                callback = metadataCallback,
-                metadataGate = metadataGate,
-            ),
-        )
+        timedHookInstall {
+            module.hook(setMetadata).intercept(
+                MetadataHooker(
+                    host = this,
+                    module = module,
+                    packageName = packageName,
+                    callback = metadataCallback,
+                    metadataGate = metadataGate,
+                ),
+            )
+        }
         module.log(
             Log.INFO,
             tag,
@@ -211,13 +278,15 @@ internal class OfficialProviderHookHost(
         require(target.methodName.isNotBlank()) { "Provider 结果 Hook methodName 不能为空" }
         val method = resolveMethod(target)
         val descriptor = describe(target)
-        module.hook(method).intercept(
-            MethodResultHooker(
-                module = module,
-                descriptor = descriptor,
-                callback = callback,
-            ),
-        )
+        timedHookInstall {
+            module.hook(method).intercept(
+                MethodResultHooker(
+                    module = module,
+                    descriptor = descriptor,
+                    callback = callback,
+                ),
+            )
+        }
         module.log(Log.INFO, tag, "官方 Provider 方法结果 Hook 已安装: target=$descriptor")
     }
 
@@ -241,13 +310,15 @@ internal class OfficialProviderHookHost(
         }
         val constructor = resolveConstructor(target)
         val descriptor = describe(target)
-        module.hook(constructor).intercept(
-            AfterConstructorHooker(
-                module = module,
-                descriptor = descriptor,
-                callback = callback,
-            ),
-        )
+        timedHookInstall {
+            module.hook(constructor).intercept(
+                AfterConstructorHooker(
+                    module = module,
+                    descriptor = descriptor,
+                    callback = callback,
+                ),
+            )
+        }
         module.log(Log.INFO, tag, "官方 Provider 构造 Hook 已安装: target=$descriptor")
     }
 
@@ -675,6 +746,21 @@ internal class OfficialProviderHookHost(
 
         @Volatile
         var repairReason: String = "runtime_invalid"
+    }
+
+    internal fun hookInstallDurationNanos(): Long = hookNanos.get()
+
+    internal fun hookInstallCount(): Int = hookCount.get()
+
+    private inline fun <T> timedHookInstall(block: () -> T): T {
+        if (!BuildConfig.DEBUG) return block()
+        val start = System.nanoTime()
+        return try {
+            block()
+        } finally {
+            hookNanos.addAndGet(System.nanoTime() - start)
+            hookCount.incrementAndGet()
+        }
     }
 
     fun logInstalled(pluginId: String) {

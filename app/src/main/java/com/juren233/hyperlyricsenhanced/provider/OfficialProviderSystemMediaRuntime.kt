@@ -9,6 +9,7 @@ package com.juren233.hyperlyricsenhanced.provider
 import android.app.Application
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
@@ -79,27 +80,54 @@ object OfficialProviderSystemMediaRuntime {
             )?.takeIf(String::isNotBlank) ?: error("active_file_missing")
             check(remoteName in module.listRemoteFiles()) { "remote_file_missing:$remoteName" }
 
+            val readStartNs = System.nanoTime()
             val packBytes = ParcelFileDescriptor.AutoCloseInputStream(
                 module.openRemoteFile(remoteName),
             ).use { it.readBytes() }
-            val verified = ProviderPackVerifier.verify(packBytes, targetPackage)
+            val readNs = System.nanoTime() - readStartNs
+            val verifyStartNs = System.nanoTime()
+            val verified = ProviderPackVerifier.verify(
+                packBytes = packBytes,
+                expectedTargetPackage = targetPackage,
+                verificationCache = preferences.getString(
+                    OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY,
+                    null,
+                ),
+                verificationCacheKey = remoteName,
+            )
+            val verifyNs = System.nanoTime() - verifyStartNs
             check(verified.manifest.pluginId == definition.id)
             check(verified.manifest.versionCode == installedVersion)
+            val loaderStartNs = System.nanoTime()
             val loader = InMemoryDexClassLoader(
-                ByteBuffer.wrap(verified.classesDex),
+                verified.dexFiles.map { ByteBuffer.wrap(it) }.toTypedArray(),
                 OfficialProviderSystemMediaRuntime::class.java.classLoader,
             )
             val entryClass = loader.loadClass(verified.manifest.entryClass)
             val plugin = runCatching {
                 entryClass.getField("INSTANCE").get(null)
             }.getOrElse { entryClass.getDeclaredConstructor().newInstance() }
+            val loaderNs = System.nanoTime() - loaderStartNs
             check(plugin is OfficialProviderSystemMediaPlugin) {
                 "Provider 不是 SystemMedia 插件"
             }
             val host = OfficialProviderSystemMediaHostImpl(application, targetPackage)
             // Plugin installation may subscribe before throwing; rollback must own the host.
             activeRuntimes[definition.id] = ActiveRuntime(plugin, host)
+            val installStartNs = System.nanoTime()
             plugin.installSystemMedia(host)
+            val installNs = System.nanoTime() - installStartNs
+            if (BuildConfig.DEBUG) {
+                module.log(
+                    Log.INFO,
+                    TAG,
+                    "SystemMedia Provider 加载耗时: id=${definition.id} package=$targetPackage " +
+                        "readUs=${readNs / 1_000} verifyUs=${verifyNs / 1_000} " +
+                        "cacheHit=${verified.verificationCacheHit} " +
+                        "dex=${verified.dexFiles.size} loaderUs=${loaderNs / 1_000} " +
+                        "installUs=${installNs / 1_000}",
+                )
+            }
             runCatching { module.log(
                 Log.INFO,
                 TAG,

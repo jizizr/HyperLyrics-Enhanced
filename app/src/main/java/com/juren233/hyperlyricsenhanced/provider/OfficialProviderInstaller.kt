@@ -50,6 +50,7 @@ object OfficialProviderInstaller {
             packBytes = packBytes,
             allowPrivateFallback = !requireRemoteFile,
         )
+        writeVerificationCache(remoteName, verified)
 
         PrefsBridge.putBoolean(
             OfficialProviderCatalog.enabledKey(manifest.pluginId),
@@ -133,6 +134,23 @@ object OfficialProviderInstaller {
     /** 只保留当前版本与上一版本的包文件，更早的版本随安装清理。 */
     private fun pruneObsoletePackFiles(pluginId: String, keepVersionCodes: Set<Int>) {
         val prefix = "hle-provider-$pluginId-"
+        val keepNames = keepVersionCodes
+            .filter { it > 0 }
+            .mapTo(mutableSetOf()) { version ->
+                OfficialProviderCatalog.remoteFileName(pluginId, version)
+            }
+        runCatching {
+            val current = PrefsBridge.getString(OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY)
+            val retained = ProviderPackVerificationCache.retain(current, keepNames)
+            if (retained != current) {
+                PrefsBridge.putString(OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY, retained)
+            }
+        }.onFailure { error ->
+            OfficialProviderAcquisitionLog.warn(
+                "插件验签缓存清理失败: id=$pluginId " +
+                    "error=${OfficialProviderAcquisitionLog.describe(error)}",
+            )
+        }
         runCatching {
             val service = RootApplication.xposedService ?: return
             service.listRemoteFiles()
@@ -146,6 +164,27 @@ object OfficialProviderInstaller {
         }.onFailure { error ->
             OfficialProviderAcquisitionLog.warn(
                 "过旧插件文件清理失败: id=$pluginId " +
+                    "error=${OfficialProviderAcquisitionLog.describe(error)}",
+            )
+        }
+    }
+
+    /** 验签通过的包写入缓存；目标进程按同一文件名与整包摘要跳过重复验签。 */
+    private fun writeVerificationCache(remoteName: String, verified: VerifiedProviderPack) {
+        runCatching {
+            val current = PrefsBridge.getString(OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY)
+            PrefsBridge.putString(
+                OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY,
+                ProviderPackVerificationCache.record(
+                    cacheJson = current,
+                    remoteName = remoteName,
+                    packSha256 = verified.packSha256,
+                    manifest = verified.manifest,
+                ),
+            )
+        }.onFailure { error ->
+            OfficialProviderAcquisitionLog.warn(
+                "插件验签缓存写入失败: name=$remoteName " +
                     "error=${OfficialProviderAcquisitionLog.describe(error)}",
             )
         }
@@ -213,14 +252,24 @@ object OfficialProviderInstaller {
             return null
         }
 
-        val manifest = runCatching {
-            ProviderPackVerifier.verify(packBytes).manifest
+        val verified = runCatching {
+            ProviderPackVerifier.verify(
+                packBytes = packBytes,
+                verificationCache = runCatching {
+                    PrefsBridge.getString(OfficialProviderCatalog.VERIFIED_PACK_CACHE_KEY)
+                }.getOrNull(),
+                verificationCacheKey = remoteName,
+            )
         }.onFailure { error ->
             OfficialProviderAcquisitionLog.warn(
                 "已安装插件校验失败，页面将提示修复: id=$pluginId version=$versionCode " +
                     "error=${OfficialProviderAcquisitionLog.describe(error)}",
             )
         }.getOrNull() ?: return null
+        if (!verified.verificationCacheHit) {
+            writeVerificationCache(remoteName, verified)
+        }
+        val manifest = verified.manifest
         if (manifest.pluginId != pluginId || manifest.versionCode != versionCode) {
             OfficialProviderAcquisitionLog.warn(
                 "已安装插件与本地记录不一致，页面将提示修复: " +

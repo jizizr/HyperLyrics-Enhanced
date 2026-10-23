@@ -111,9 +111,14 @@ object RootConstants {
     const val KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX = "key_hook_lyricon_provider_delay_"
 
     // --- 官方插件后台自动更新（HLE 插件化计划 1.3） ---
-    const val KEY_PROVIDER_AUTO_UPDATE = "key_provider_auto_update"
     const val KEY_PROVIDER_AUTO_UPDATE_LAST_CHECK = "key_provider_auto_update_last_check"
-    const val DEFAULT_PROVIDER_AUTO_UPDATE = true
+
+    /** 打开 App 时的检查节流间隔（小时）。0=不开启，24=仅后台 24 小时周期。 */
+    const val KEY_PROVIDER_AUTO_UPDATE_INTERVAL_HOURS = "key_provider_auto_update_interval_hours"
+    const val DEFAULT_PROVIDER_AUTO_UPDATE_INTERVAL_HOURS = 6
+
+    /** 已废弃的布尔开关，仅用于一次性迁移到间隔偏好。 */
+    const val KEY_PROVIDER_AUTO_UPDATE = "key_provider_auto_update"
 
     /** 目标进程插件状态快照的本地缓存（root 读回成功后写入，后台更新直接使用）。 */
     const val KEY_PROVIDER_TARGET_STATE_CACHE = "key_provider_target_state_cache"

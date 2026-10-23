@@ -196,6 +196,9 @@ object OfficialProviderCatalog {
     fun loadedVersionKey(pluginId: String) =
         "key_official_provider_loaded_version_$pluginId"
 
+    /** 验签缓存：键为包文件名，值为整包摘要与清单，仅由主程序写入远端偏好。 */
+    const val VERIFIED_PACK_CACHE_KEY = "key_official_provider_verified_packs"
+
     fun remoteFileName(pluginId: String, versionCode: Int) =
         "hle-provider-$pluginId-$versionCode.hlp"
 }

@@ -56,6 +56,8 @@ import com.juren233.hyperlyricsenhanced.provider.OfficialProviderInstaller
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderItem
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderUiState
+import com.juren233.hyperlyricsenhanced.provider.auto.ProviderAutoUpdatePolicy
+import com.juren233.hyperlyricsenhanced.provider.auto.ProviderAutoUpdateScheduler
 import com.juren233.hyperlyricsenhanced.ui.component.ProComponent
 import com.juren233.hyperlyricsenhanced.ui.component.SuperSwitchPreference
 import com.juren233.hyperlyricsenhanced.ui.component.TagComponent
@@ -92,6 +94,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Download
@@ -194,28 +197,40 @@ internal fun LazyListScope.providerSections(
     }
 
     item(key = "official_auto_update") {
-        var autoUpdateEnabled by remember {
-            mutableStateOf(
-                PrefsBridge.getBoolean(
-                    RootConstants.KEY_PROVIDER_AUTO_UPDATE,
-                    RootConstants.DEFAULT_PROVIDER_AUTO_UPDATE,
-                ),
-            )
-        }
+        val context = LocalContext.current
+        var intervalHours by remember { mutableIntStateOf(ProviderAutoUpdatePolicy.intervalHours()) }
+        val intervalOptions = listOf(
+            stringResource(R.string.provider_auto_update_interval_off),
+            stringResource(R.string.provider_auto_update_interval_1h),
+            stringResource(R.string.provider_auto_update_interval_2h),
+            stringResource(R.string.provider_auto_update_interval_6h),
+            stringResource(R.string.provider_auto_update_interval_12h),
+            stringResource(R.string.provider_auto_update_interval_24h),
+        )
         Card(
             modifier = Modifier
                 .padding(horizontal = 12.dp)
                 .padding(bottom = 12.dp)
                 .fillMaxWidth(),
         ) {
-            SuperSwitchPreference(
-                checked = autoUpdateEnabled,
-                onCheckedChange = { enabled ->
-                    autoUpdateEnabled = enabled
-                    PrefsBridge.putBoolean(RootConstants.KEY_PROVIDER_AUTO_UPDATE, enabled)
-                },
+            WindowDropdownPreference(
                 title = stringResource(R.string.provider_auto_update_title),
-                summary = stringResource(R.string.provider_auto_update_summary),
+                summary = stringResource(
+                    if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_OFF) {
+                        R.string.provider_auto_update_summary_off
+                    } else {
+                        R.string.provider_auto_update_summary
+                    },
+                ),
+                items = intervalOptions,
+                selectedIndex = ProviderAutoUpdatePolicy.CHOICE_HOURS.indexOf(intervalHours)
+                    .coerceAtLeast(0),
+                onSelectedIndexChange = { index ->
+                    intervalHours = ProviderAutoUpdatePolicy.CHOICE_HOURS[index]
+                    ProviderAutoUpdatePolicy.putIntervalHours(intervalHours)
+                    // 立即应用调度变化（如改为不开启时取消已排任务）。
+                    ProviderAutoUpdateScheduler.onAppOpened(context)
+                },
             )
         }
     }

@@ -20,22 +20,28 @@ import java.util.concurrent.TimeUnit
 /**
  * 后台自动更新的调度入口：常驻周期任务 + 打开 App 时的节流补充检查
  * （国产 ROM 对后台任务限制严格，打开 App 的检查才是实际主路径）。
+ *
+ * 用户选择的间隔只影响打开 App 的节流；周期任务固定 24 小时。选择
+ * 「不开启」时取消全部任务；选择 24 小时时只保留周期任务。
  */
 object ProviderAutoUpdateScheduler {
     private const val PERIODIC_WORK_NAME = "provider_auto_update_periodic"
     private const val APP_OPEN_WORK_NAME = "provider_auto_update_app_open"
 
-    /** 周期任务的执行间隔。 */
-    private const val PERIOD_INTERVAL_HOURS = 24L
-
     fun onAppOpened(context: Context) {
         val workManager = WorkManager.getInstance(context)
+        val intervalHours = ProviderAutoUpdatePolicy.intervalHours()
+        if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_OFF) {
+            workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
+            workManager.cancelUniqueWork(APP_OPEN_WORK_NAME)
+            return
+        }
+
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-
         val periodic = PeriodicWorkRequestBuilder<ProviderAutoUpdateWorker>(
-            PERIOD_INTERVAL_HOURS,
+            24,
             TimeUnit.HOURS,
         )
             .setConstraints(constraints)
@@ -47,7 +53,11 @@ object ProviderAutoUpdateScheduler {
             periodic,
         )
 
-        if (ProviderAutoUpdatePolicy.isEnabled() && ProviderAutoUpdatePolicy.shouldCheckOnAppOpen()) {
+        if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_PERIODIC_ONLY) {
+            // 完全交给后台周期，打开 App 不额外触发。
+            return
+        }
+        if (ProviderAutoUpdatePolicy.shouldCheckOnAppOpen(intervalHours)) {
             val oneTime = OneTimeWorkRequestBuilder<ProviderAutoUpdateWorker>()
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
