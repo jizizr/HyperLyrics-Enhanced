@@ -60,6 +60,9 @@
     <string name="title_remove_island_whitelist">Remove Mini Window Whitelist</string>
     <string name="title_apple_music_optimization_page">Apple Music Optimizations</string>
     <string name="summary_apple_music_optimization_page">May have bugs, performance issues, or version incompatibilities</string>
+    <string name="apple_music_optimization_notice_lyric_source">Select the Lyricon lyric source in Lyric settings and add the Apple Music plugin in Lyricon configuration to use optimization features. Tap here to switch</string>
+    <string name="apple_music_optimization_notice_add_provider">Add the Apple Music plugin in Lyricon configuration to use optimization features. Tap here to add</string>
+    <string name="apple_music_optimization_notice_enable_provider">The Apple Music plugin is added but disabled. Tap here to enable it</string>
     <string name="title_apple_music_app_content">App Content</string>
     <string name="title_apple_music_content_ui_language">Apple Music Content Language</string>
     <string name="summary_apple_music_content_ui_language">May slow loading. Changes only the content UI language; songs or services unavailable in your account region can be browsed but not played or used.</string>
@@ -251,14 +254,12 @@
     <string name="title_lyric_anim">Lyrics Animation</string>
     <string name="title_lyric_provider">Lyricon Config</string>
     <string name="title_builtin_provider">Built-in Provider</string>
-    <string name="summary_builtin_apple_provider">Built into HyperLyrics Enhanced and cannot be removed</string>
     <string name="title_official_provider_plugins">Added Plugins</string>
     <string name="title_provider_downloads">Add Plugins</string>
     <string name="title_legacy_provider_modules">Installed Standalone Provider Modules</string>
     <string name="title_legacy_provider_repository">Download Standalone Providers</string>
     <string name="summary_legacy_provider_repository">Standalone Providers work without a lyrics service, but plugins take priority and are easier to set up and maintain.</string>
     <string name="legacy_provider_release_home">https://github.com/tomakino/LyricProvider/releases</string>
-    <string name="provider_status_builtin">Built-in</string>
     <string name="provider_catalog_loading">Loading the plugin catalog</string>
     <string name="provider_catalog_load_failed">Unable to load the plugin catalog</string>
     <string name="provider_status_processing">Processing…</string>

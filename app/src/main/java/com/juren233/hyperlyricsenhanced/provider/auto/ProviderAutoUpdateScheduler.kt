@@ -15,6 +15,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import java.util.concurrent.TimeUnit
 
 /**
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit
  *
  * 用户选择的间隔只影响打开 App 的节流；周期任务固定 24 小时。选择
  * 「不开启」时取消全部任务；选择 24 小时时只保留周期任务。
+ * 安装/升级 App 后的首次进入不受间隔节流，补一次检查以更新随包基线插件。
  */
 object ProviderAutoUpdateScheduler {
     private const val PERIODIC_WORK_NAME = "provider_auto_update_periodic"
@@ -31,6 +33,12 @@ object ProviderAutoUpdateScheduler {
     fun onAppOpened(context: Context) {
         val workManager = WorkManager.getInstance(context)
         val intervalHours = ProviderAutoUpdatePolicy.intervalHours()
+        val forceCheck = ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+            intervalHours = intervalHours,
+            currentVersionCode = BuildConfig.VERSION_CODE,
+            seenVersionCode = ProviderAutoUpdatePolicy.seenVersionCode(),
+        )
+
         if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_OFF) {
             workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
             workManager.cancelUniqueWork(APP_OPEN_WORK_NAME)
@@ -53,18 +61,20 @@ object ProviderAutoUpdateScheduler {
             periodic,
         )
 
-        if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_PERIODIC_ONLY) {
+        if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_PERIODIC_ONLY && !forceCheck) {
             // 完全交给后台周期，打开 App 不额外触发。
             return
         }
-        if (ProviderAutoUpdatePolicy.shouldCheckOnAppOpen(intervalHours)) {
+        if (forceCheck || ProviderAutoUpdatePolicy.shouldCheckOnAppOpen(intervalHours)) {
             val oneTime = OneTimeWorkRequestBuilder<ProviderAutoUpdateWorker>()
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
                 .build()
             workManager.enqueueUniqueWork(
                 APP_OPEN_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                // 首次补检查用 KEEP：已有检查在跑时不要因再次进入 App 而取消重来；
+                // 常规节流检查到期时用 REPLACE 保证执行一轮新的检查。
+                if (forceCheck) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE,
                 oneTime,
             )
         }

@@ -146,18 +146,36 @@ object OfficialProviderRepository {
                     OfficialProviderCatalog.installedVersionKey(definition.id),
                     0,
                 )
-                if (installedVersionCode <= 0) return@mapNotNull null
+                // Apple Music 的基线包随主程序内置，没有安装记录也应出现在插件列表里；
+                // 用户显式移除后不再回退到基线。
+                val baselineManifest = if (
+                    definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID &&
+                    !PrefsBridge.getBoolean(OfficialProviderCatalog.removedKey(definition.id), false)
+                ) {
+                    ProviderBaselinePack.manifest(context, definition.id)
+                } else {
+                    null
+                }
+                val effectiveVersionCode = installedVersionCode
+                    .takeIf { it > 0 }
+                    ?: baselineManifest?.versionCode
+                    ?: 0
+                if (effectiveVersionCode <= 0) return@mapNotNull null
 
-                val installedManifest = OfficialProviderInstaller.readInstalledManifest(
-                    context = context,
-                    pluginId = definition.id,
-                    versionCode = installedVersionCode,
-                )
+                val installedManifest = if (installedVersionCode > 0) {
+                    OfficialProviderInstaller.readInstalledManifest(
+                        context = context,
+                        pluginId = definition.id,
+                        versionCode = installedVersionCode,
+                    )
+                } else {
+                    null
+                }
                 val versionNameKey = OfficialProviderCatalog.installedVersionNameKey(definition.id)
                 val storedVersionName = PrefsBridge.getString(versionNameKey)
                 val installedVersionName = installedManifest?.versionName
+                    ?: baselineManifest?.versionName
                     ?: storedVersionName
-                    ?: installedManifest?.versionName?.also { PrefsBridge.putString(versionNameKey, it) }
 
                 OfficialProviderItem(
                     catalog = ProviderCatalogEntry(
@@ -166,13 +184,13 @@ object OfficialProviderRepository {
                         targetPackages = definition.targetPackages.toList(),
                         available = false,
                     ),
-                    installedVersionCode = installedVersionCode,
+                    installedVersionCode = effectiveVersionCode,
                     installedVersionName = installedVersionName,
                     enabled = PrefsBridge.getBoolean(
                         OfficialProviderCatalog.enabledKey(definition.id),
-                        false,
+                        definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
                     ),
-                    needsRepair = installedManifest == null,
+                    needsRepair = installedVersionCode > 0 && installedManifest == null,
                 )
             }
         }
@@ -204,7 +222,12 @@ object OfficialProviderRepository {
             }
         }
         OfficialProviderCatalog.definitions.forEach { definition ->
-            require(definition.id in entriesById) {
+            // 内置基线插件（Apple Music）可以先用模块 APK 里的基线包工作，
+            // 目录尚未发布它的条目时不算目录损坏。
+            require(
+                definition.id in entriesById ||
+                    definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
+            ) {
                 "Provider 目录与内置允许列表不一致"
             }
         }
@@ -218,8 +241,13 @@ object OfficialProviderRepository {
         }
 
         return OfficialProviderCatalog.definitions.map { definition ->
-            val entry = requireNotNull(entriesById[definition.id]).copy(
+            val entry = entriesById[definition.id]?.copy(
                 displayName = definition.displayName,
+            ) ?: ProviderCatalogEntry(
+                id = definition.id,
+                displayName = definition.displayName,
+                targetPackages = definition.targetPackages.toList(),
+                available = false,
             )
             val installedVersionCode = PrefsBridge.getInt(
                 OfficialProviderCatalog.installedVersionKey(definition.id),
@@ -234,12 +262,25 @@ object OfficialProviderRepository {
             } else {
                 null
             }
+            val baselineManifest = if (
+                definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID && context != null &&
+                !PrefsBridge.getBoolean(OfficialProviderCatalog.removedKey(definition.id), false)
+            ) {
+                ProviderBaselinePack.manifest(context, definition.id)
+            } else {
+                null
+            }
+            val effectiveVersionCode = installedVersionCode
+                .takeIf { it > 0 }
+                ?: baselineManifest?.versionCode
+                ?: 0
             val storedVersionName = PrefsBridge.getString(
                 OfficialProviderCatalog.installedVersionNameKey(definition.id),
             )
             val installedVersionName = installedManifest?.versionName
                 ?: storedVersionName
                 ?: entry.versionName?.takeIf { installedVersionCode == entry.versionCode }
+                ?: baselineManifest?.versionName
             if (storedVersionName == null && installedVersionName != null) {
                 PrefsBridge.putString(
                     OfficialProviderCatalog.installedVersionNameKey(definition.id),
@@ -268,11 +309,11 @@ object OfficialProviderRepository {
             val loadedVersionCode = targetState.loadedVersionByPlugin[definition.id] ?: 0
             OfficialProviderItem(
                 catalog = entry,
-                installedVersionCode = installedVersionCode,
+                installedVersionCode = effectiveVersionCode,
                 installedVersionName = installedVersionName,
                 enabled = PrefsBridge.getBoolean(
                     OfficialProviderCatalog.enabledKey(definition.id),
-                    false,
+                    definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
                 ),
                 needsRepair = needsRepair,
                 selectedRelease = selectedRelease,
@@ -463,8 +504,7 @@ object OfficialProviderRepository {
             entry.targetPackages.isNotEmpty() &&
                 entry.targetPackages.all {
                     OfficialProviderCatalog.isTargetPackageCompatible(entry.id, it)
-                } &&
-                OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME !in entry.targetPackages,
+                },
         ) { "Provider 目录目标包名无效" }
         if (entry.available) {
             require(!entry.versionName.isNullOrBlank())

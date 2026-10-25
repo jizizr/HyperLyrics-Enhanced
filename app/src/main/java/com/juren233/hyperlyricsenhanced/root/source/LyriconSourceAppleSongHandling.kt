@@ -44,8 +44,7 @@ import com.juren233.hyperlyricsenhanced.root.LyriconDataBridge
 import com.juren233.hyperlyricsenhanced.root.island.renderer.BaseIslandRenderer
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
-import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
-import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
+import com.juren233.hyperlyricsenhanced.contract.AppleDirectBridgeContract
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ConnectionListener

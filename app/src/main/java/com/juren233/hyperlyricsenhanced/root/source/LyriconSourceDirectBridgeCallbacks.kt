@@ -12,7 +12,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.AppleMetadataFlowDiagnostics
 import com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys
 import com.juren233.hyperlyricsenhanced.lyric.model.Song as LocalSong
 import com.juren233.hyperlyricsenhanced.online.model.Source
-import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
+import com.juren233.hyperlyricsenhanced.contract.AppleSourceSwitchPerformanceDiagnostics
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 
 internal fun LyriconSource.onDirectSongChanged(song: LyriconSong?) {

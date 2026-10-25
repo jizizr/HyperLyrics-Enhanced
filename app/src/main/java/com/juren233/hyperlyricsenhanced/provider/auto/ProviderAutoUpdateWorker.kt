@@ -10,6 +10,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderAcquisitionLog
 import com.juren233.hyperlyricsenhanced.root.RootApplication
 import io.github.libxposed.service.XposedService
@@ -56,6 +57,9 @@ class ProviderAutoUpdateWorker(
             // 目录拉取成功即视为完成了一次检查（含部分插件失败的情况）；
             // 抛异常的失败不记录，保证下次打开 App 仍会触发检查。
             ProviderAutoUpdatePolicy.recordCheck()
+            // 记录版本号后，安装/升级后的首次强制检查才结束；失败时保留，
+            // 下次进入 App 会再次补一次，避免开箱更新因首次未激活而丢失。
+            ProviderAutoUpdatePolicy.recordSeenVersionCode(BuildConfig.VERSION_CODE)
             if (outcome.failed.isEmpty()) Result.success() else Result.retry()
         } catch (e: CancellationException) {
             throw e

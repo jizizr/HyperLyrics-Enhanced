@@ -68,6 +68,28 @@ object ProviderAutoUpdatePolicy {
         intervalHours != INTERVAL_PERIODIC_ONLY &&
         nowMs - lastCheckMs >= intervalHours * 3_600_000L
 
+    /**
+     * 安装或升级 App 后的首次进入补一次检查：随包内置的基线插件不保证是最新版本，
+     * 而常规检查受用户选择的间隔节流。用户关闭自动更新时仍然尊重开关。
+     */
+    fun shouldCheckOnFirstLaunch(
+        intervalHours: Int = intervalHours(),
+        currentVersionCode: Int,
+        seenVersionCode: Int,
+    ): Boolean = intervalHours != INTERVAL_OFF && currentVersionCode != seenVersionCode
+
+    fun seenVersionCode(): Int = PrefsBridge.getInt(
+        RootConstants.KEY_PROVIDER_AUTO_UPDATE_LAST_SEEN_VERSION_CODE,
+        0,
+    )
+
+    fun recordSeenVersionCode(versionCode: Int) {
+        PrefsBridge.putInt(
+            RootConstants.KEY_PROVIDER_AUTO_UPDATE_LAST_SEEN_VERSION_CODE,
+            versionCode,
+        )
+    }
+
     fun recordCheck(nowMs: Long = System.currentTimeMillis()) {
         PrefsBridge.putLong(RootConstants.KEY_PROVIDER_AUTO_UPDATE_LAST_CHECK, nowMs)
     }

@@ -7,7 +7,7 @@
 package com.juren233.hyperlyricsenhanced.online
 
 import android.content.SharedPreferences
-import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.contract.AppleMusicPreferenceKeys
 import com.juren233.hyperlyricsenhanced.online.model.Source
 
 object OnlineTranslationSourcePreferences {
@@ -25,8 +25,8 @@ object OnlineTranslationSourcePreferences {
 
     fun orderedSources(prefs: SharedPreferences?): List<Source> {
         val stored = prefs?.getString(
-            RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
-            RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
+            AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
+            AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
         )
         val order = resolveOrder(
             rawOrder = stored,
@@ -51,9 +51,9 @@ object OnlineTranslationSourcePreferences {
 
     fun isAutoSelectBestSourceEnabled(prefs: SharedPreferences?): Boolean =
         prefs?.getBoolean(
-            RootConstants.KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
-            RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
-        ) ?: RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE
+            AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
+            AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
+        ) ?: AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE
 
     fun normalizeOrder(raw: String?): List<Source> {
         val parsed = raw.orEmpty()
@@ -70,19 +70,19 @@ object OnlineTranslationSourcePreferences {
             .joinToString(",", transform = Source::name)
 
     fun sourcePreferenceKey(source: Source): String = when (source) {
-        Source.NE -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE
-        Source.QM -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
-        Source.KUWO -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
-        Source.KUGOU -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
-        Source.LB -> RootConstants.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+        Source.NE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE
+        Source.QM -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
+        Source.KUWO -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
+        Source.KUGOU -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
+        Source.LB -> AppleMusicPreferenceKeys.KEY_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
     }
 
     fun sourceDefaultEnabled(source: Source): Boolean = when (source) {
-        Source.NE -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE
-        Source.QM -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
-        Source.KUWO -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
-        Source.KUGOU -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
-        Source.LB -> RootConstants.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
+        Source.NE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE
+        Source.QM -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_QQ
+        Source.KUWO -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO
+        Source.KUGOU -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU
+        Source.LB -> AppleMusicPreferenceKeys.DEFAULT_HOOK_APPLE_MUSIC_LUNABEAT_WORD_LYRICS
     }
 
     fun isSourceEnabled(prefs: SharedPreferences?, source: Source): Boolean =
@@ -90,18 +90,18 @@ object OnlineTranslationSourcePreferences {
             ?: sourceDefaultEnabled(source)
 
     fun appPreferenceKey(packageName: String): String? = when (packageName) {
-        APPLE_MUSIC_PACKAGE -> RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION
-        QISHUI_PACKAGE -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI
-        SPOTIFY_PACKAGE -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
-        SALT_PACKAGE -> RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT
+        APPLE_MUSIC_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION
+        QISHUI_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI
+        SPOTIFY_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
+        SALT_PACKAGE -> AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT
         else -> null
     }
 
     fun appDefaultEnabled(packageName: String): Boolean = when (packageName) {
-        APPLE_MUSIC_PACKAGE -> RootConstants.DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION
-        QISHUI_PACKAGE -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI
-        SPOTIFY_PACKAGE -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
-        SALT_PACKAGE -> RootConstants.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT
+        APPLE_MUSIC_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION
+        QISHUI_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_QISHUI
+        SPOTIFY_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY
+        SALT_PACKAGE -> AppleMusicPreferenceKeys.DEFAULT_HOOK_ONLINE_TRANSLATION_APP_SALT
         else -> false
     }
 
@@ -123,18 +123,18 @@ object OnlineTranslationSourcePreferences {
     }
 
     fun isSourcePreference(key: String?): Boolean = key in setOf(
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_ORDER,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_AUTO_SELECT_BEST_SOURCE,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_NETEASE,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_QQ,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUWO,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_SOURCE_KUGOU,
     )
 
     fun isAppPreference(key: String?): Boolean = key in setOf(
-        RootConstants.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY,
-        RootConstants.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT,
+        AppleMusicPreferenceKeys.KEY_HOOK_APPLE_MUSIC_MATCH_ONLINE_TRANSLATION,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_QISHUI,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SPOTIFY,
+        AppleMusicPreferenceKeys.KEY_HOOK_ONLINE_TRANSLATION_APP_SALT,
     )
 }

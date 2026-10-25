@@ -3,14 +3,6 @@
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 
-enum class Source {
-    QM,
-    NE,
-    KUWO,
-    KUGOU,
-    LB,
-}
-
 @Parcelize
 data class SongSearchResult(
     val id: String,

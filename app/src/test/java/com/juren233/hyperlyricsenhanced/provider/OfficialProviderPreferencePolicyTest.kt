@@ -64,6 +64,12 @@ class OfficialProviderPreferencePolicyTest {
                 OfficialProviderCatalog.activeFileKey("com.salt.music"),
             ),
         )
+        assertEquals(
+            setOf("com.apple.android.music"),
+            OfficialProviderPreferencePolicy.affectedPlayerPackages(
+                OfficialProviderCatalog.removedKey("applemusic"),
+            ),
+        )
         assertTrue(
             OfficialProviderPreferencePolicy.affectedPlayerPackages(
                 OfficialProviderCatalog.installedVersionNameKey("salt-player"),

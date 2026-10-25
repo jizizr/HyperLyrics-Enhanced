@@ -73,9 +73,56 @@
 -keep class io.github.proify.lyricon.provider.** { *; }
 -keep class io.github.proify.lyricon.lyric.model.** { *; }
 
+# The Apple Music Pack also compiles against kotlinx.coroutines and kotlinx.serialization
+# as compileOnly and resolves them from the core class loader at runtime. Keep only the
+# classes the Pack references: keeping all of kotlinx.coroutines disables R8's direct
+# Main-dispatcher instantiation, and LSPosed module class loaders cannot read the
+# META-INF/services entry, so Dispatchers.Main would fail inside target processes.
+-keep class kotlinx.coroutines.BuildersKt { *; }
+-keep class kotlinx.coroutines.CompletableJob { *; }
+-keep class kotlinx.coroutines.CoroutineDispatcher { *; }
+-keep class kotlinx.coroutines.CoroutineScope { *; }
+-keep class kotlinx.coroutines.CoroutineScopeKt { *; }
+-keep class kotlinx.coroutines.CoroutineStart { *; }
+-keep class kotlinx.coroutines.DelayKt { *; }
+-keep class kotlinx.coroutines.Dispatchers { *; }
+-keep class kotlinx.coroutines.Job { *; }
+-keep class kotlinx.coroutines.Job$DefaultImpls { *; }
+-keep class kotlinx.coroutines.SupervisorKt { *; }
+-keep class kotlinx.serialization.** { *; }
+
 # OfficialProviderHost.openDexKit returns DexKitBridge; Packs compile against the same DexKit
 # version as compileOnly and resolve these classes through the core class loader.
 -keep class org.luckypray.dexkit.** { *; }
+
+# Apple Music Provider is distributed as a Pack. Everything below is the narrow core surface
+# that Pack bytecode resolves through the core class loader; rename or removal here is a
+# runtime NoSuchMethodError for already published Packs.
+-keep class com.juren233.hyperlyricsenhanced.contract.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.lyric.model.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleOriginalMetadataPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy$* { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleLyricsBlurPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy { *; }
+-keep class com.juren233.hyperlyricsenhanced.common.bridge.** { *; }
+-keep class com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge { *; }
+-keep class com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge$* { *; }
+-keep class com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver { *; }
+-keep class com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver$* { *; }
+
+# Room resolves generated *_Impl databases reflectively; room-runtime only keeps the class,
+# so R8 may otherwise drop the no-arg constructor WorkManager instantiates at startup.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
 
 # Lyricon registration and delivery cross process and class-loader boundaries through AIDL,
 # Binder descriptors, Parcelable models and broadcast receivers. The upstream AARs currently

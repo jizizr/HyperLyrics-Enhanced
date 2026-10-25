@@ -81,6 +81,48 @@ REQUIRED_KOTLIN_RUNTIME_CLASSES = (
     "kotlin.text.StringsKt",
 )
 
+# Narrow core surface used by the Apple Music Provider Pack. These names must survive R8
+# exactly as written; the Pack is compiled independently and resolves them from the core APK.
+REQUIRED_CONTRACT_CLASSES = (
+    "com.juren233.hyperlyricsenhanced.contract.AppleMusicPreferenceKeys",
+    "com.juren233.hyperlyricsenhanced.contract.AppleDirectBridgeContract",
+    "com.juren233.hyperlyricsenhanced.contract.AppleSourceSwitchPerformanceDiagnostics",
+    "com.juren233.hyperlyricsenhanced.contract.PlaybackStateActivityPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleOriginalMetadataPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.RomanizationPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleSystemFontWeightPolicy$FontMode",
+    "com.juren233.hyperlyricsenhanced.common.lyric.ApplePronunciationVisibilityPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleLyricsBlurPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.LyricMetadataKeys",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceInfo",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceStatus",
+    "com.juren233.hyperlyricsenhanced.common.lyric.AppleMissingLyricsSourceMetadata",
+    "com.juren233.hyperlyricsenhanced.common.lyric.ChineseLyricsPolicy",
+    "com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStat",
+    "com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationMatchStatsCodec",
+    "com.juren233.hyperlyricsenhanced.common.lyric.OnlineTranslationContentPolicy",
+    "com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences",
+    "com.juren233.hyperlyricsenhanced.online.model.Source",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectBinderConnection",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectBinderConnection$Entry",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectReconnectPolicy",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectBroadcastIdentityKt",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectIdentityPolicy",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectIdentityPolicy$Decision",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectIdentityPolicy$Result",
+    "com.juren233.hyperlyricsenhanced.common.bridge.AppleDirectIdentityPolicy$Sender",
+    "com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge",
+    "com.juren233.hyperlyricsenhanced.IAppleMusicLyricBridge$Stub",
+    "com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver",
+    "com.juren233.hyperlyricsenhanced.IAppleMusicTranslationReceiver$Stub",
+    "com.juren233.hyperlyricsenhanced.lyric.model.Song",
+    "com.juren233.hyperlyricsenhanced.lyric.model.Song$Companion",
+    "com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine",
+    "com.juren233.hyperlyricsenhanced.lyric.model.LyricMetadata",
+    "com.juren233.hyperlyricsenhanced.lyric.model.LyricWord",
+)
+
 REQUIRED_LYRICON_RUNTIME_CLASSES = (
     "io.github.proify.lyricon.lyric.model.LyricWord",
     "io.github.proify.lyricon.lyric.model.RichLyricLine",
@@ -226,6 +268,7 @@ def main() -> int:
     required = {
         *(f"{PROVIDER_PACKAGE}.{name}" for name in REQUIRED_PROVIDER_CLASSES),
         *REQUIRED_KOTLIN_RUNTIME_CLASSES,
+        *REQUIRED_CONTRACT_CLASSES,
         *REQUIRED_LYRICON_RUNTIME_CLASSES,
         *REQUIRED_LYRICON_SUBSCRIBER_CLASSES,
         *REQUIRED_LYRICON_CENTRAL_CLASSES,

@@ -40,7 +40,8 @@ internal object OfficialProviderPreferencePolicy {
         if (key.isNullOrBlank()) return emptySet()
         return OfficialProviderCatalog.definitions.firstNotNullOfOrNull { definition ->
             val matchesPluginKey = key == OfficialProviderCatalog.enabledKey(definition.id) ||
-                key == OfficialProviderCatalog.installedVersionKey(definition.id)
+                key == OfficialProviderCatalog.installedVersionKey(definition.id) ||
+                key == OfficialProviderCatalog.removedKey(definition.id)
             val matchesPlayerKey = definition.targetPackages.any { packageName ->
                 key == OfficialProviderCatalog.activeFileKey(packageName)
             }
@@ -59,10 +60,19 @@ internal object OfficialProviderPreferencePolicy {
     ): Boolean? {
         val definition = OfficialProviderCatalog.definitionForPackage(playerPackageName)
             ?: return null
+        val isAppleMusic = definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
         val enabled = preferences.getBoolean(
             OfficialProviderCatalog.enabledKey(definition.id),
-            false,
+            isAppleMusic,
         )
+        // Apple Music ships a baseline Pack inside the module APK, so it is configured
+        // without an installed-version or active-file record; a user removal disables it.
+        if (isAppleMusic) {
+            return enabled && !preferences.getBoolean(
+                OfficialProviderCatalog.removedKey(definition.id),
+                false,
+            )
+        }
         val installedVersion = preferences.getInt(
             OfficialProviderCatalog.installedVersionKey(definition.id),
             0,

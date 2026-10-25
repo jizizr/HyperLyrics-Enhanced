@@ -165,4 +165,44 @@ class ProviderLoadMarkerTest {
         assertTrue(second is ProviderLoadMarker.Decision.LoadNormally)
         assertEquals(2, (second as ProviderLoadMarker.Decision.LoadNormally).newMarker.uncleanCount)
     }
+
+    @Test
+    fun recordedBadVersionStaysRolledBackAfterMarkerDecay() {
+        val staleAt = nowMs - ProviderLoadMarker.STRIKE_DECAY_MS - 1
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 29,
+            marker = ProviderLoadMarker.MarkerState(29, 2, staleAt),
+            previousVersionCode = 28,
+            badVersionCodes = setOf(29),
+            nowMs = nowMs,
+        )
+
+        assertEquals(ProviderLoadMarker.Decision.Rollback(29, 28), decision)
+    }
+
+    @Test
+    fun recordedBadVersionRollsBackWithoutMarker() {
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 29,
+            marker = null,
+            previousVersionCode = 28,
+            badVersionCodes = setOf(29),
+            nowMs = nowMs,
+        )
+
+        assertEquals(ProviderLoadMarker.Decision.Rollback(29, 28), decision)
+    }
+
+    @Test
+    fun badPreviousVersionIsNotUsedAsFallback() {
+        val decision = ProviderLoadMarker.decide(
+            pendingVersionCode = 28,
+            marker = ProviderLoadMarker.MarkerState(28, 2, nowMs),
+            previousVersionCode = 29,
+            badVersionCodes = setOf(29),
+            nowMs = nowMs,
+        )
+
+        assertEquals(ProviderLoadMarker.Decision.Rollback(28, null), decision)
+    }
 }

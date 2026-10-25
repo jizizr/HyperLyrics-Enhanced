@@ -1,7 +1,9 @@
 package com.juren233.hyperlyricsenhanced.common
 
+import com.juren233.hyperlyricsenhanced.contract.AppleMusicPreferenceKeys
+
 object UIConstants {
-    const val PREF_NAME = "com.juren233.hyperlyricsenhanced_preferences"
+    const val PREF_NAME = AppleMusicPreferenceKeys.PREFERENCES_NAME
 
     // ================= APP CORE KEYS =================
     const val KEY_WORK_MODE = "key_work_mode"
@@ -25,7 +27,7 @@ object UIConstants {
     const val KEY_FEATURE_ENTRY_HYPER_ISLAND = "key_feature_entry_hyper_island"
     const val KEY_FEATURE_ENTRY_AOD_LYRICS = "key_feature_entry_aod_lyrics"
     const val KEY_FEATURE_ENTRY_DYNAMIC_ISLAND = "key_feature_entry_dynamic_island"
-    const val KEY_FEATURE_ENTRY_APPLE_MUSIC = "key_feature_entry_apple_music"
+    const val KEY_FEATURE_ENTRY_APPLE_MUSIC = AppleMusicPreferenceKeys.KEY_FEATURE_ENTRY_APPLE_MUSIC
     /** 功能入口一次性初始化是否已执行（首次安装 / 首次升级到带入口的版本时写入）。 */
     const val KEY_FEATURE_ENTRY_INITIALIZED = "key_feature_entry_initialized"
     /** 上次观测到的 Apple Music 安装状态：用于检测安装/卸载并重新触发入口的自动开关。 */

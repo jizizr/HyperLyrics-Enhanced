@@ -31,8 +31,13 @@ app/src/main/res/drawable/contributor_*.png
 DEBUGGING_MISTAKES.md
 .trae/
 apks/
-scripts/
+scripts/*
+!scripts/sync_shared_to_providers.py
 .zcodeignore
 .tmp-hle-logs/
 .zcode/
 /CANDIDATE_A_S0.md
+
+# Local Apple Music baseline pack (production-key signed); release builds fetch the
+# published pack instead of committing this binary.
+app/src/main/assets/providers/applemusic.hlp

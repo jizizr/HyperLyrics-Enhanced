@@ -61,23 +61,4 @@ class LyricPublicationOriginContractTest {
             Regex("if \\(BuildConfig\\.DEBUG\\)[\\s\\S]{0,400}origin=").containsMatchIn(sourceFile),
         )
     }
-
-    @Test
-    fun `AM never depends on root source policies`() {
-        val amDir = File(
-            repoRoot(),
-            "app/src/main/java/io/github/proify/lyricon/amprovider",
-        )
-        val offenders = amDir.walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
-            .filter { file ->
-                file.readLines().any { line ->
-                    line.startsWith("import ") &&
-                        line.contains("com.juren233.hyperlyricsenhanced.root.source")
-                }
-            }
-            .map(File::getName)
-            .toList()
-        assertTrue("AM 侧不得依赖 Root source 政策: $offenders", offenders.isEmpty())
-    }
 }

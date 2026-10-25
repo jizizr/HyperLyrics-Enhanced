@@ -18,6 +18,7 @@ object OfficialProviderCatalog {
     val PLUGIN_API_SUPPORTED_RANGE: IntRange get() = PLUGIN_API_MIN_SUPPORTED..PLUGIN_API_VERSION
     const val CORE_PACKAGE_NAME = "com.juren233.hyperlyricsenhanced"
     const val APPLE_MUSIC_PACKAGE_NAME = "com.apple.android.music"
+    const val APPLE_MUSIC_PLUGIN_ID = "applemusic"
     const val SALT_PLAYER_PACKAGE_NAME = "com.salt.music"
     const val OFFICIAL_PROVIDER_PACKAGE_PREFIX =
         "com.juren233.hyperlyricsenhanced.provider."
@@ -37,7 +38,13 @@ object OfficialProviderCatalog {
             targetDisplayNames[packageName] ?: displayName
     }
 
+    // 插件列表按此顺序展示，Apple Music 置顶。
     val definitions = listOf(
+        Definition(
+            id = "applemusic",
+            displayName = "Apple Music",
+            targetPackages = setOf(APPLE_MUSIC_PACKAGE_NAME),
+        ),
         Definition("netease", "网易云音乐", setOf("com.netease.cloudmusic", "com.hihonor.cloudmusic")),
         Definition(
             id = "qqmusic",
@@ -180,6 +187,10 @@ object OfficialProviderCatalog {
 
     fun installedVersionKey(pluginId: String) =
         "key_official_provider_installed_version_$pluginId"
+
+    /** 用户显式移除过该插件：不再使用内置基线包，直到重新安装。 */
+    fun removedKey(pluginId: String) =
+        "key_official_provider_removed_$pluginId"
 
     fun installedVersionNameKey(pluginId: String) =
         "key_official_provider_installed_version_name_$pluginId"

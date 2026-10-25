@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.root
 
+import com.juren233.hyperlyricsenhanced.contract.AppleSourceSwitchPerformanceDiagnostics
 import com.juren233.hyperlyricsenhanced.root.reload.SystemUiHookLifetime
 import android.app.Application
 import android.content.BroadcastReceiver
@@ -73,7 +74,6 @@ import io.github.libxposed.api.XposedModuleInterface.HotReloadedParam
 import io.github.libxposed.api.XposedModuleInterface.HotReloadingParam
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
 import io.github.libxposed.api.XposedModuleInterface.PackageLoadedParam
-import io.github.proify.lyricon.amprovider.xposed.AppleMusicProvider
 import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
@@ -277,6 +277,8 @@ class HookEntry : XposedModule() {
         }.onFailure {
             HookLogger.e("HookEntry", "繁简转换字典路径初始化失败", it)
         }
+        AppleSourceSwitchPerformanceDiagnostics.enabled =
+            com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG
         HookLogger.i("HookEntry", "模块加载完成，当前应用版本${com.juren233.hyperlyricsenhanced.BuildConfig.VERSION_NAME}-${com.juren233.hyperlyricsenhanced.BuildConfig.VERSION_CODE}")
         LyricRuntimeDiagnostics.record("module_loaded") {
             "version=${com.juren233.hyperlyricsenhanced.BuildConfig.VERSION_NAME} " +
@@ -396,12 +398,6 @@ class HookEntry : XposedModule() {
             // 白名单 Hook 必须借插件类加载器安装。
             UnlockIslandWhitelist.doHookInClassLoader(param.defaultClassLoader)
             UnlockFocusWhitelist.doHookInClassLoader(param.defaultClassLoader)
-        } else if (packageName == "com.apple.android.music") {
-            runCatching {
-                AppleMusicProvider.install(this, param.defaultClassLoader)
-            }.onFailure {
-                HookLogger.e("HookEntry", "Apple Music 内置歌词提供器注入失败", it)
-            }
         } else if (packageName == OfficialProviderCatalog.SALT_PLAYER_PACKAGE_NAME) {
             SaltPlayerNextTrackHooker.install(
                 module = this,

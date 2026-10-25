@@ -33,7 +33,6 @@ object OfficialProviderRuntime {
         processName: String,
     ): Boolean {
         val definition = OfficialProviderCatalog.definitionForPackage(packageName) ?: return false
-        if (packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME) return false
         if (definition.systemMediaRuntime) return false
         if (packageName in loadedPackages) return true
 
@@ -41,9 +40,10 @@ object OfficialProviderRuntime {
             // 远程偏好在被 Hook 进程里是只读的（libxposed API 契约），
             // 只用于读取模块下发的开关与安装记录。
             val preferences = module.getRemotePreferences(UIConstants.PREF_NAME)
+            val isAppleMusic = definition.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
             val enabled = preferences.getBoolean(
                 OfficialProviderCatalog.enabledKey(definition.id),
-                false,
+                isAppleMusic,
             )
             if (!enabled) {
                 return logUnavailable(module, definition.id, packageName, "disabled")
@@ -52,14 +52,42 @@ object OfficialProviderRuntime {
                 OfficialProviderCatalog.installedVersionKey(definition.id),
                 0,
             )
-            if (installedVersion <= 0) {
-                return logUnavailable(module, definition.id, packageName, "installed_version_missing")
-            }
             val remoteName = preferences.getString(
                 OfficialProviderCatalog.activeFileKey(packageName),
                 null,
             )?.takeIf(String::isNotBlank)
-                ?: return logUnavailable(module, definition.id, packageName, "active_file_missing")
+
+            // 模块升级后内置基线包可能比之前下载的远程包更新，此时优先加载基线包；
+            // 只读基线包清单比较版本，不读取 DEX。
+            if (isAppleMusic && installedVersion > 0 &&
+                (ProviderBaselinePack.manifest(module, definition.id)?.versionCode ?: 0) >
+                installedVersion
+            ) {
+                loadBaseline(
+                    module = module,
+                    targetClassLoader = targetClassLoader,
+                    definition = definition,
+                    packageName = packageName,
+                    processName = processName,
+                )?.let { return it }
+            }
+            if (installedVersion <= 0 || remoteName == null) {
+                if (isAppleMusic) {
+                    loadBaseline(
+                        module = module,
+                        targetClassLoader = targetClassLoader,
+                        definition = definition,
+                        packageName = packageName,
+                        processName = processName,
+                    )?.let { return it }
+                }
+                return logUnavailable(
+                    module,
+                    definition.id,
+                    packageName,
+                    if (installedVersion <= 0) "installed_version_missing" else "active_file_missing",
+                )
+            }
 
             // 崩溃计数、坏版本、实际加载版本写入目标 App 自己的 filesDir；
             // 目录不可用时退化为无标记模式继续加载，绝不阻断插件本身。
@@ -68,14 +96,25 @@ object OfficialProviderRuntime {
             // 崩溃回退只在主进程计数：secondary process 生命周期天然更短，快进快出
             // 会把正常退出误算成崩溃。
             val isMainProcess = processName == packageName
+            val previousVersionCode = preferences.getInt(
+                OfficialProviderCatalog.previousVersionKey(definition.id),
+                0,
+            )
+            // 坏版本对所有进程生效，避免主进程已回退而子进程仍加载坏版本。
+            val badVersionCodes = store?.readBadVersions(definition.id).orEmpty()
             val decision = if (isMainProcess) {
                 ProviderLoadMarker.decide(
                     pendingVersionCode = installedVersion,
                     marker = store?.readMarker(definition.id),
-                    previousVersionCode = preferences.getInt(
-                        OfficialProviderCatalog.previousVersionKey(definition.id),
-                        0,
-                    ),
+                    previousVersionCode = previousVersionCode,
+                    badVersionCodes = badVersionCodes,
+                )
+            } else if (installedVersion in badVersionCodes) {
+                ProviderLoadMarker.decide(
+                    pendingVersionCode = installedVersion,
+                    marker = null,
+                    previousVersionCode = previousVersionCode,
+                    badVersionCodes = badVersionCodes,
                 )
             } else {
                 ProviderLoadMarker.Decision.LoadNormally(
@@ -93,6 +132,15 @@ object OfficialProviderRuntime {
                     store?.addBadVersion(definition.id, decision.badVersionCode)
                     val fallbackVersion = decision.fallbackVersionCode
                     if (fallbackVersion == null) {
+                        if (isAppleMusic) {
+                            loadBaseline(
+                                module = module,
+                                targetClassLoader = targetClassLoader,
+                                definition = definition,
+                                packageName = packageName,
+                                processName = processName,
+                            )?.let { return it }
+                        }
                         return logUnavailable(
                             module, definition.id, packageName, "rollback_without_previous",
                         )
@@ -102,6 +150,15 @@ object OfficialProviderRuntime {
                         fallbackVersion,
                     )
                     if (fallbackName !in module.listRemoteFiles()) {
+                        if (isAppleMusic) {
+                            loadBaseline(
+                                module = module,
+                                targetClassLoader = targetClassLoader,
+                                definition = definition,
+                                packageName = packageName,
+                                processName = processName,
+                            )?.let { return it }
+                        }
                         return logUnavailable(
                             module, definition.id, packageName, "rollback_file_missing:$fallbackName",
                         )
@@ -127,6 +184,15 @@ object OfficialProviderRuntime {
 
                 is ProviderLoadMarker.Decision.LoadNormally -> {
                     if (remoteName !in module.listRemoteFiles()) {
+                        if (isAppleMusic) {
+                            loadBaseline(
+                                module = module,
+                                targetClassLoader = targetClassLoader,
+                                definition = definition,
+                                packageName = packageName,
+                                processName = processName,
+                            )?.let { return it }
+                        }
                         return logUnavailable(
                             module,
                             definition.id,
@@ -159,6 +225,46 @@ object OfficialProviderRuntime {
             )
             false
         }
+    }
+
+    private fun loadBaseline(
+        module: XposedModule,
+        targetClassLoader: ClassLoader,
+        definition: OfficialProviderCatalog.Definition,
+        packageName: String,
+        processName: String,
+    ): Boolean? {
+        val removedByUser = runCatching {
+            module.getRemotePreferences(UIConstants.PREF_NAME)
+                .getBoolean(OfficialProviderCatalog.removedKey(definition.id), false)
+        }.getOrDefault(false)
+        if (removedByUser) return null
+        val verified = ProviderBaselinePack.verified(module, definition.id) ?: return null
+        // 不匹配时返回 null 而不是抛出，调用方还能继续尝试远程包。
+        if (verified.manifest.pluginId != definition.id ||
+            packageName !in verified.manifest.targetPackages
+        ) {
+            module.log(
+                Log.WARN,
+                TAG,
+                "基线包与当前目标不匹配，跳过: expected=${definition.id}/$packageName " +
+                    "actual=${verified.manifest.pluginId}/${verified.manifest.targetPackages}",
+            )
+            return null
+        }
+        return installVerified(
+            module = module,
+            targetClassLoader = targetClassLoader,
+            definition = definition,
+            packageName = packageName,
+            processName = processName,
+            verified = verified,
+            expectedVersion = verified.manifest.versionCode,
+            source = "baseline",
+            store = null,
+            scheduleMarkerClear = false,
+            loadTiming = "baseline",
+        )
     }
 
     private fun loadPlugin(
@@ -203,10 +309,43 @@ object OfficialProviderRuntime {
             "Provider Pack 版本与已安装记录不一致: expected=$expectedVersion, " +
                 "actual=${verified.manifest.versionCode}"
         }
+        return installVerified(
+            module = module,
+            targetClassLoader = targetClassLoader,
+            definition = definition,
+            packageName = packageName,
+            processName = processName,
+            verified = verified,
+            expectedVersion = expectedVersion,
+            source = "remote:$remoteName",
+            store = store,
+            scheduleMarkerClear = scheduleMarkerClear,
+            loadTiming = "readUs=${readNs / 1_000} verifyUs=${verifyNs / 1_000} " +
+                "cacheHit=${verified.verificationCacheHit}",
+        )
+    }
+
+    private fun installVerified(
+        module: XposedModule,
+        targetClassLoader: ClassLoader,
+        definition: OfficialProviderCatalog.Definition,
+        packageName: String,
+        processName: String,
+        verified: VerifiedProviderPack,
+        expectedVersion: Int,
+        source: String,
+        store: ProviderTargetStateStore?,
+        scheduleMarkerClear: Boolean,
+        loadTiming: String,
+    ): Boolean {
         val loaderStartNs = System.nanoTime()
         val pluginLoader = InMemoryDexClassLoader(
             verified.dexFiles.map { ByteBuffer.wrap(it) }.toTypedArray(),
-            OfficialProviderRuntime::class.java.classLoader,
+            ProviderPackParentClassLoader(
+                delegate = OfficialProviderRuntime::class.java.classLoader
+                    ?: error("缺少模块类加载器"),
+                blockedPrefix = "com.juren233.hle.providers.${definition.id}.",
+            ),
         )
         val entryClass = pluginLoader.loadClass(verified.manifest.entryClass)
         val plugin = runCatching {
@@ -223,6 +362,7 @@ object OfficialProviderRuntime {
             targetClassLoader = targetClassLoader,
             packageName = packageName,
             processName = processName,
+            pluginVersionCode = verified.manifest.versionCode,
         )
         val installStartNs = System.nanoTime()
         plugin.install(host)
@@ -237,9 +377,8 @@ object OfficialProviderRuntime {
             module.log(
                 Log.INFO,
                 TAG,
-                "官方 Provider 加载耗时: id=${definition.id} package=$packageName " +
-                    "readUs=${readNs / 1_000} verifyUs=${verifyNs / 1_000} " +
-                    "cacheHit=${verified.verificationCacheHit} dex=${verified.dexFiles.size} " +
+                "官方 Provider 加载耗时: id=${definition.id} package=$packageName source=$source " +
+                    "$loadTiming dex=${verified.dexFiles.size} " +
                     "loaderUs=${loaderNs / 1_000} installUs=${installNs / 1_000} " +
                     "hooks=${host.hookInstallCount()} hookUs=${host.hookInstallDurationNanos() / 1_000}",
             )
@@ -247,9 +386,20 @@ object OfficialProviderRuntime {
         module.log(
             Log.INFO,
             TAG,
-            "官方 Provider 已加载: id=${definition.id} package=$packageName version=$expectedVersion",
+            "官方 Provider 已加载: id=${definition.id} package=$packageName " +
+                "version=$expectedVersion source=$source",
         )
         return true
+    }
+
+    private class ProviderPackParentClassLoader(
+        delegate: ClassLoader,
+        private val blockedPrefix: String,
+    ) : ClassLoader(delegate) {
+        override fun loadClass(name: String, resolve: Boolean): Class<*> {
+            if (name.startsWith(blockedPrefix)) throw ClassNotFoundException(name)
+            return super.loadClass(name, resolve)
+        }
     }
 
     /** 健康运行 [HEALTHY_GRACE_MS] 后清除崩溃计数标记；期间进程死亡则标记留存。 */

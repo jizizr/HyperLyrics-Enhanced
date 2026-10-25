@@ -307,6 +307,46 @@ class ProviderPackVerifierTest {
         assertEquals("Provider Pack 签名无效", exception.message)
     }
 
+    @Test
+    fun bundledPackSkipsSignatureButKeepsManifestChecks() {
+        // 签名全零、摘要不匹配：远程包会被拒绝，内置基线包只做结构与清单校验。
+        val pack = zipPack()
+
+        val loaded = ProviderPackVerifier.loadBundled(pack)
+
+        assertEquals("kuwo", loaded.manifest.pluginId)
+        assertEquals(1, loaded.dexFiles.size)
+        assertFalse(loaded.verificationCacheHit)
+        assertThrows(IllegalArgumentException::class.java) { ProviderPackVerifier.verify(pack) }
+    }
+
+    @Test
+    fun bundledPackStillRejectsIncompatibleManifest() {
+        val pack = zipPack(manifest = defaultManifest().copy(minCoreVersionCode = Int.MAX_VALUE))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.loadBundled(pack)
+        }
+    }
+
+    @Test
+    fun bundledPackStillRejectsUnexpectedFiles() {
+        val pack = zipPack(extraEntryName = "payload.bin")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ProviderPackVerifier.loadBundled(pack)
+        }
+    }
+
+    @Test
+    fun readsManifestWithoutLoadingDex() {
+        val pack = zipPack(manifest = defaultManifest().copy(versionCode = 7))
+
+        val manifest = ProviderPackVerifier.readManifest(pack.inputStream())
+
+        assertEquals(7, manifest?.versionCode)
+    }
+
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
             .digest(bytes)

@@ -42,8 +42,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.MediaCardDiagnosticLogger
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import io.github.proify.lyricon.central.CentralRuntime
-import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
-import io.github.proify.lyricon.amprovider.xposed.AppleSourceSwitchPerformanceDiagnostics
+import com.juren233.hyperlyricsenhanced.contract.AppleDirectBridgeContract
 import io.github.proify.lyricon.lyric.model.Song as LyriconSong
 import io.github.proify.lyricon.subscriber.ActivePlayerListener
 import io.github.proify.lyricon.subscriber.ConnectionListener

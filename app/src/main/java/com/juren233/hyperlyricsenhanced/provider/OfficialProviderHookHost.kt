@@ -46,9 +46,10 @@ import java.util.concurrent.atomic.AtomicLong
 
 internal class OfficialProviderHookHost(
     internal val module: XposedModule,
-    internal val targetClassLoader: ClassLoader,
+    override val targetClassLoader: ClassLoader,
     override val packageName: String,
     override val processName: String,
+    override val pluginVersionCode: Int = 0,
 ) : OfficialProviderHost {
     internal val tag = "OfficialProviderHookHost"
     private val dexRegistrationLock = Any()
@@ -162,6 +163,9 @@ internal class OfficialProviderHookHost(
     override val coreVersionCode: Int
         get() = BuildConfig.VERSION_CODE
 
+    override val moduleApkPath: String?
+        get() = runCatching { module.moduleApplicationInfo.sourceDir }.getOrNull()
+
     override fun intercept(
         executable: Executable,
         interceptor: OfficialProviderInterceptor,
@@ -172,24 +176,30 @@ internal class OfficialProviderHookHost(
                 OfficialProviderInterceptHooker(
                     interceptor = interceptor,
                     onFirstCallback = {
-                        module.log(
-                            Log.INFO,
-                            tag,
-                            "官方 Provider 拦截 Hook 首次命中: target=$descriptor",
-                        )
+                        if (BuildConfig.DEBUG) {
+                            module.log(
+                                Log.INFO,
+                                tag,
+                                "官方 Provider 拦截 Hook 首次命中: target=$descriptor",
+                            )
+                        }
                     },
                     onFallback = { error ->
-                        module.log(
-                            Log.ERROR,
-                            tag,
-                            "官方 Provider 拦截回调异常，已回退原调用结果: " +
-                                "target=$descriptor error=${error.message}",
-                        )
+                        if (BuildConfig.DEBUG) {
+                            module.log(
+                                Log.ERROR,
+                                tag,
+                                "官方 Provider 拦截回调异常，已回退原调用结果: " +
+                                    "target=$descriptor error=${error.message}",
+                            )
+                        }
                     },
                 ),
             )
         }
-        module.log(Log.INFO, tag, "官方 Provider 拦截 Hook 已安装: target=$descriptor")
+        if (BuildConfig.DEBUG) {
+            module.log(Log.INFO, tag, "官方 Provider 拦截 Hook 已安装: target=$descriptor")
+        }
         return OfficialProviderHookHandle { runCatching { handle.unhook() } }
     }
 

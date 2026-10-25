@@ -620,7 +620,10 @@ fun OfficialProviderDownloadPage() {
                         ) { index ->
                             val item = availableItems[index]
                             val busy = item.catalog.id in state.value.busyPluginIds
-                            val versionText = item.catalog.versionName ?: stringResource(R.string.unknown)
+                            val downloadable = item.selectedRelease != null
+                            val versionText = item.selectedRelease?.versionName
+                                ?: item.catalog.versionName
+                                ?: stringResource(R.string.unknown)
                             Card(
                                 modifier = Modifier
                                     .padding(horizontal = 12.dp)
@@ -631,7 +634,7 @@ fun OfficialProviderDownloadPage() {
                                     title = item.catalog.displayName,
                                     summary = buildString {
                                         append(
-                                            if (item.catalog.available) {
+                                            if (downloadable) {
                                                 stringResource(R.string.provider_status_available, versionText)
                                             } else {
                                                 stringResource(R.string.provider_status_unavailable)
@@ -644,7 +647,7 @@ fun OfficialProviderDownloadPage() {
                                         append("\n")
                                         append(item.catalog.targetPackages.joinToString())
                                     },
-                                    onClick = if (!busy && item.catalog.available) {
+                                    onClick = if (!busy && downloadable) {
                                         { installProvider(item) }
                                     } else {
                                         null
@@ -653,12 +656,12 @@ fun OfficialProviderDownloadPage() {
                                         Text(
                                             text = if (busy) {
                                                 stringResource(R.string.provider_status_downloading)
-                                            } else if (!item.catalog.available) {
+                                            } else if (!downloadable) {
                                                 stringResource(R.string.provider_status_unavailable)
                                             } else {
                                                 stringResource(R.string.provider_action_download)
                                             },
-                                            color = if (item.catalog.available || busy) {
+                                            color = if (downloadable || busy) {
                                                 MiuixTheme.colorScheme.primary
                                             } else {
                                                 MiuixTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -666,7 +669,7 @@ fun OfficialProviderDownloadPage() {
                                            fontSize = 14.sp,
                                        )
                                    },
-                                    enabled = !busy && item.catalog.available,
+                                    enabled = !busy && downloadable,
                                 )
                             }
                         }

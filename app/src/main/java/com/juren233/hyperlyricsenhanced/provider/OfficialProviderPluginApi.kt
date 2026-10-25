@@ -57,6 +57,13 @@ interface OfficialProviderHost {
     val packageName: String
     val processName: String
 
+    /**
+     * 目标 App 的类加载器；Pack 在 Application 可用之前做反射或早期装配时使用。
+     *
+     * 旧主程序没有这项能力，返回 null；调用方应等到 `hookApplication` 回调后再装配。
+     */
+    val targetClassLoader: ClassLoader? get() = null
+
     fun hookApplication(callback: OfficialProviderApplicationCallback)
 
     fun hookMediaSession(
@@ -183,6 +190,16 @@ interface OfficialProviderHost {
 
     /** 当前主程序 versionCode，Pack 可据此区分 DexKit 缓存等与版本相关的行为。 */
     val coreVersionCode: Int get() = 0
+
+    /** 当前 Provider Pack 的 versionCode，与主程序版本独立；旧主程序返回 0。 */
+    val pluginVersionCode: Int get() = 0
+
+    /**
+     * 主模块 APK 路径；Pack 读取模块 assets 中的共享资源（如繁简字典）时使用。
+     *
+     * 旧主程序没有这项能力，返回 null；调用方应自行降级。
+     */
+    val moduleApkPath: String? get() = null
 }
 
 /**

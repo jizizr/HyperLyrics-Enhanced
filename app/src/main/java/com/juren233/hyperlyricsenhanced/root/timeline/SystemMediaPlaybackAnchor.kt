@@ -23,7 +23,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeCallbackGate
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupException
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
-import io.github.proify.lyricon.provider.PlaybackStateActivityPolicy
+import com.juren233.hyperlyricsenhanced.contract.PlaybackStateActivityPolicy
 import java.util.concurrent.ConcurrentHashMap
 
 /**

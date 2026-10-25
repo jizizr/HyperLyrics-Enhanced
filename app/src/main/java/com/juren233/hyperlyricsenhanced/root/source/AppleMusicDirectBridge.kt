@@ -27,7 +27,7 @@ import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanupExcepti
 import io.github.proify.extensions.deflate
 import io.github.proify.extensions.inflate
 import io.github.proify.extensions.json
-import io.github.proify.lyricon.amprovider.xposed.AppleDirectBridgeContract
+import com.juren233.hyperlyricsenhanced.contract.AppleDirectBridgeContract
 import io.github.proify.lyricon.lyric.model.Song
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString

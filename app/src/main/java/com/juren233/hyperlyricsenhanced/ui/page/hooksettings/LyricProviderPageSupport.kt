@@ -235,40 +235,6 @@ internal fun LazyListScope.providerSections(
         }
     }
 
-    item(key = "builtin_apple_music") {
-        val packageName = OfficialProviderCatalog.CORE_PACKAGE_NAME
-        val isExpanded = expandedStates[packageName] ?: false
-        Card(
-            modifier = Modifier
-                .padding(horizontal = 12.dp)
-                .padding(bottom = 12.dp)
-                .fillMaxWidth(),
-            onClick = { expandedStates[packageName] = !isExpanded },
-        ) {
-            Column {
-                ProComponent(
-                    title = "Apple Music",
-                    summary = stringResource(R.string.summary_builtin_apple_provider),
-                    onClick = { expandedStates[packageName] = !isExpanded },
-                    endActions = {
-                        Text(
-                            text = stringResource(R.string.provider_status_builtin),
-                            color = MiuixTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            fontSize = 14.sp,
-                        )
-                    },
-                    showIndication = false,
-                )
-                AnimatedVisibility(visible = isExpanded) {
-                    ProviderDelayEditor(
-                        delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName,
-                        onRemove = null,
-                    )
-                }
-            }
-        }
-    }
-
     if (officialUiState.items.isEmpty()) {
         item(key = "official_empty") {
             Card(
@@ -291,6 +257,14 @@ internal fun LazyListScope.providerSections(
         ) { index ->
             val item = officialUiState.items[index]
             val packageName = OfficialProviderCatalog.OFFICIAL_PROVIDER_PACKAGE_PREFIX + item.catalog.id
+            // Apple Music 走直连桥，上报的提供器包名是主程序包名。
+            val delayPackageName = if (
+                item.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
+            ) {
+                OfficialProviderCatalog.CORE_PACKAGE_NAME
+            } else {
+                packageName
+            }
             val isExpanded = expandedStates[packageName] ?: false
             val busy = item.catalog.id in officialUiState.busyPluginIds
             val installedVersionName = item.installedVersionName ?: stringResource(R.string.unknown)
@@ -368,7 +342,7 @@ internal fun LazyListScope.providerSections(
                     )
                     AnimatedVisibility(visible = isExpanded) {
                         ProviderDelayEditor(
-                            delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + packageName,
+                            delayKey = RootConstants.KEY_HOOK_LYRICON_PROVIDER_DELAY_PREFIX + delayPackageName,
                             onUpdate = if (item.updateAvailable && !busy) {
                                 { onUpdateOfficial(item) }
                             } else {

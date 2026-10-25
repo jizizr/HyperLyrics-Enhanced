@@ -101,7 +101,7 @@ object ProviderPackVerifier {
             null
         }
         val manifest = cachedManifest
-            ?: json.decodeFromString<ProviderPackManifest>(manifestBytes.toString(Charsets.UTF_8))
+            ?: decodeManifest(manifestBytes)
         validateManifest(manifest, expectedTargetPackage, coreVersionCode)
 
         if (cachedManifest == null) {
@@ -130,6 +130,51 @@ object ProviderPackVerifier {
             verificationCacheHit = cachedManifest != null,
         )
     }
+
+    /**
+     * 读取随模块 APK 内置的基线包：保留结构与清单兼容校验，跳过摘要和 Ed25519 验签。
+     *
+     * 基线包与执行校验的主程序代码同在模块 APK 内，能篡改它的人也能篡改校验本身，
+     * 运行时验签不增加防护；签名、摘要与清单已在构建任务 prepareAppleMusicBaselinePack
+     * 中完整校验，失败即构建失败。远程下载的包仍必须走 [verify]。
+     */
+    fun loadBundled(
+        packBytes: ByteArray,
+        expectedTargetPackage: String? = null,
+        coreVersionCode: Int = BuildConfig.VERSION_CODE,
+    ): VerifiedProviderPack {
+        require(packBytes.size <= MAX_PACK_BYTES) { "Provider Pack 超过大小限制" }
+        val entries = readEntries(packBytes)
+        val manifestBytes = requireNotNull(entries[MANIFEST_ENTRY])
+        val dexEntries = orderedDexEntries(entries)
+        require(dexEntries.isNotEmpty()) { "Provider Pack 缺少 classes.dex" }
+        require(dexEntries.size <= MAX_DEX_FILES) { "Provider Pack DEX 文件过多" }
+        require(dexEntries.map { it.index } == (1..dexEntries.size).toList()) {
+            "Provider Pack DEX 文件编号不连续"
+        }
+        val manifest = decodeManifest(manifestBytes)
+        validateManifest(manifest, expectedTargetPackage, coreVersionCode)
+        return VerifiedProviderPack(
+            manifest = manifest,
+            dexFiles = dexEntries.map { it.bytes },
+            packSha256 = "",
+            verificationCacheHit = false,
+        )
+    }
+
+    /**
+     * 只读出包内 manifest.json，不读取 DEX；用于比较内置基线包与已安装远程包的版本。
+     * 打包脚本把 manifest.json 写在第一个条目，正常情况下只需读取几百字节。
+     */
+    fun readManifest(packStream: java.io.InputStream): ProviderPackManifest? =
+        ZipInputStream(packStream).use { zip ->
+            generateSequence { zip.nextEntry }
+                .firstOrNull { it.name == MANIFEST_ENTRY }
+                ?.let { decodeManifest(zip.readEntryBytes(MAX_MANIFEST_BYTES)) }
+        }
+
+    private fun decodeManifest(manifestBytes: ByteArray): ProviderPackManifest =
+        json.decodeFromString<ProviderPackManifest>(manifestBytes.toString(Charsets.UTF_8))
 
     private fun validateManifest(
         manifest: ProviderPackManifest,
@@ -166,9 +211,6 @@ object ProviderPackVerifier {
                 OfficialProviderCatalog.isTargetPackageCompatible(manifest.pluginId, it)
             },
         ) { "Provider 目标软件与内置允许列表不一致" }
-        require(OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME !in manifest.targetPackages) {
-            "Apple Music 只能使用内置 Provider"
-        }
         expectedTargetPackage?.let { expected ->
             require(expected in manifest.targetPackages) { "Provider 不支持当前音乐软件" }
             require(OfficialProviderCatalog.definitionForPackage(expected)?.id == manifest.pluginId) {

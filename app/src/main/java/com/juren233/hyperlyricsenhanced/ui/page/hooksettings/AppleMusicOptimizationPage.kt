@@ -1,44 +1,62 @@
 package com.juren233.hyperlyricsenhanced.ui.page.hooksettings
 
+import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.juren233.hyperlyricsenhanced.R
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
+import com.juren233.hyperlyricsenhanced.provider.OfficialProviderRepository
 import com.juren233.hyperlyricsenhanced.ui.component.AppSettingsIconButton
 import com.juren233.hyperlyricsenhanced.ui.component.FloatRangeInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.NumberRangeInputDialog
+import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
+import com.juren233.hyperlyricsenhanced.ui.navigation.Route
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.XposedLyricSettingPage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookConfigSaver
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.lyrics.common.rememberHookPrefs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+private enum class AppleMusicPluginGate { Loading, Missing, Disabled, Ready }
 
 @Composable
 fun AppleMusicOptimizationPage(
@@ -52,6 +70,72 @@ fun AppleMusicOptimizationPage(
 ) {
     val prefs = rememberHookPrefs()
     val saveConfig = rememberHookConfigSaver(prefs)
+    val context = LocalContext.current
+    val navigator = LocalNavigator.current
+    val coroutineScope = rememberCoroutineScope()
+    var lyricSource by remember {
+        mutableStateOf(
+            prefs.getString(
+                RootConstants.KEY_HOOK_LYRIC_SOURCE,
+                RootConstants.DEFAULT_HOOK_LYRIC_SOURCE,
+            ) ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
+        )
+    }
+    var pluginGate by remember { mutableStateOf(AppleMusicPluginGate.Loading) }
+    val refreshPluginGate: () -> Unit = {
+        coroutineScope.launch {
+            val item = withContext(Dispatchers.IO) {
+                OfficialProviderRepository.loadInstalledItems(context)
+                    .firstOrNull {
+                        it.catalog.id == OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID
+                    }
+            }
+            pluginGate = when {
+                item == null -> AppleMusicPluginGate.Missing
+                !item.enabled -> AppleMusicPluginGate.Disabled
+                else -> AppleMusicPluginGate.Ready
+            }
+        }
+    }
+    LaunchedEffect(Unit) { refreshPluginGate() }
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                RootConstants.KEY_HOOK_LYRIC_SOURCE -> {
+                    lyricSource = prefs.getString(
+                        RootConstants.KEY_HOOK_LYRIC_SOURCE,
+                        RootConstants.DEFAULT_HOOK_LYRIC_SOURCE,
+                    ) ?: RootConstants.DEFAULT_HOOK_LYRIC_SOURCE
+                }
+                OfficialProviderCatalog.installedVersionKey(
+                    OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
+                ),
+                OfficialProviderCatalog.enabledKey(
+                    OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
+                ),
+                OfficialProviderCatalog.removedKey(
+                    OfficialProviderCatalog.APPLE_MUSIC_PLUGIN_ID,
+                ) -> refreshPluginGate()
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val lyricSourceReady = lyricSource == "lyricon"
+    val featuresEnabled = pluginGate == AppleMusicPluginGate.Ready && lyricSourceReady
+    val requirementNotice = when {
+        !lyricSourceReady -> R.string.apple_music_optimization_notice_lyric_source
+        pluginGate == AppleMusicPluginGate.Missing ->
+            R.string.apple_music_optimization_notice_add_provider
+        pluginGate == AppleMusicPluginGate.Disabled ->
+            R.string.apple_music_optimization_notice_enable_provider
+        else -> null
+    }
+    val listState = rememberLazyListState()
+    val noticeVisible = requirementNotice != null
+    LaunchedEffect(noticeVisible) {
+        if (noticeVisible) listState.animateScrollToItem(0)
+    }
     var forceCellularDataEntry by remember {
         mutableStateOf(
             prefs.getBoolean(
@@ -339,6 +423,7 @@ fun AppleMusicOptimizationPage(
         subtitle = stringResource(R.string.summary_apple_music_optimization_page),
         outerPadding = outerPadding,
         showNavigationIcon = showNavigationIcon,
+        listState = listState,
         // 仅当本页作为主页面首页（主页被隐藏）时，标题收回顶栏后只显示应用名；
         // 主页仍在时保持原有的标题 + 副标题。
         collapsedTitle = if (collapseTitleToAppName) stringResource(R.string.app_name) else null,
@@ -364,6 +449,22 @@ fun AppleMusicOptimizationPage(
             null
         },
     ) {
+        if (requirementNotice != null) {
+            item(key = "provider_requirement_notice") {
+                AppleMusicOptimizationNotice(
+                    text = stringResource(requirementNotice),
+                    onClick = {
+                        navigator.navigate(
+                            if (lyricSourceReady) Route.LyricProvider else Route.LyricSettings
+                        )
+                    },
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp)
+                        .fillMaxWidth(),
+                )
+            }
+        }
         item(key = "app_content_title") {
             SmallTitle(text = stringResource(R.string.title_apple_music_app_content))
         }
@@ -374,6 +475,7 @@ fun AppleMusicOptimizationPage(
                     .fillMaxWidth()
             ) {
                 OverlayDropdownPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(R.string.title_apple_music_content_ui_language),
                     summary = stringResource(R.string.summary_apple_music_content_ui_language),
                     items = languageOptions,
@@ -389,6 +491,7 @@ fun AppleMusicOptimizationPage(
                 )
                 if (contentUiLanguage != RootConstants.APPLE_MUSIC_CONTENT_UI_LANGUAGE_NONE) {
                     SwitchPreference(
+                        enabled = featuresEnabled,
                         title = stringResource(
                             R.string.title_apple_music_override_account_language
                         ),
@@ -403,6 +506,7 @@ fun AppleMusicOptimizationPage(
                     )
                 }
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_restore_cjk_original_metadata
                     ),
@@ -417,6 +521,7 @@ fun AppleMusicOptimizationPage(
                 )
                 if (metadataLookupEnabled) {
                     SwitchPreference(
+                        enabled = featuresEnabled,
                         title = stringResource(
                             R.string.title_apple_music_localized_metadata_cache
                         ),
@@ -445,6 +550,7 @@ fun AppleMusicOptimizationPage(
                     .fillMaxWidth()
             ) {
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(R.string.title_apple_music_volume_balance),
                     summary = stringResource(R.string.summary_apple_music_volume_balance),
                     checked = volumeBalance,
@@ -457,6 +563,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_notification_open_full_player
                     ),
@@ -470,6 +577,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_fill_missing_lyrics
                     ),
@@ -486,6 +594,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_native_online_translation
                     ),
@@ -502,6 +611,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_hide_mandarin_pinyin
                     ),
@@ -515,6 +625,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_lunabeat_word_lyrics
                     ),
@@ -531,6 +642,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(R.string.title_apple_music_force_cellular_data_entry),
                     checked = forceCellularDataEntry,
                     onCheckedChange = { enabled ->
@@ -542,6 +654,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_prevent_network_auto_skip
                     ),
@@ -569,6 +682,7 @@ fun AppleMusicOptimizationPage(
                     .fillMaxWidth()
             ) {
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_simplify_traditional_content
                     ),
@@ -582,6 +696,7 @@ fun AppleMusicOptimizationPage(
                     },
                 )
                 OverlayDropdownPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(R.string.title_apple_music_lyrics_blur_effect),
                     items = lyricsBlurEffectOptions,
                     selectedIndex = lyricsBlurEffect,
@@ -602,6 +717,7 @@ fun AppleMusicOptimizationPage(
                         RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
                 ) {
                     ArrowPreference(
+                        enabled = featuresEnabled,
                         title = stringResource(
                             R.string.title_apple_music_lyrics_blur_custom_values
                         ),
@@ -631,6 +747,7 @@ fun AppleMusicOptimizationPage(
                         RootConstants.APPLE_MUSIC_LYRICS_BLUR_EFFECT_OFF
                 ) {
                     SwitchPreference(
+                        enabled = featuresEnabled,
                         title = stringResource(
                             R.string.title_apple_music_lyrics_blur_animation
                         ),
@@ -648,6 +765,7 @@ fun AppleMusicOptimizationPage(
                     )
                 }
                 SwitchPreference(
+                    enabled = featuresEnabled,
                     title = stringResource(
                         R.string.title_apple_music_follow_system_font
                     ),
@@ -669,6 +787,7 @@ fun AppleMusicOptimizationPage(
                     exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                 ) {
                     SwitchPreference(
+                        enabled = featuresEnabled,
                         title = stringResource(
                             R.string.title_apple_music_follow_system_font_weight
                         ),
@@ -686,6 +805,36 @@ fun AppleMusicOptimizationPage(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AppleMusicOptimizationNotice(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(onClick = onClick, modifier = modifier) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = text,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = MiuixTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = MiuixIcons.ChevronForward,
+                contentDescription = null,
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .size(18.dp),
+            )
         }
     }
 }

@@ -63,19 +63,29 @@ object ProviderLoadMarker {
         return MarkerState(versionCode, count, lastAttemptAtMs)
     }
 
+    /**
+     * [badVersionCodes] 是目标进程已记录的坏版本：一经记录就不再加载（不随标记衰减恢复），
+     * 只有用户手动重装该版本时由 App 侧清除。上一版本同样不能是坏版本。
+     */
     fun decide(
         pendingVersionCode: Int,
         marker: MarkerState?,
         previousVersionCode: Int,
+        badVersionCodes: Set<Int> = emptySet(),
         maxStrikes: Int = DEFAULT_MAX_STRIKES,
         nowMs: Long = System.currentTimeMillis(),
     ): Decision {
+        val fallbackVersionCode = previousVersionCode
+            .takeIf { it > 0 && it != pendingVersionCode && it !in badVersionCodes }
+        if (pendingVersionCode in badVersionCodes) {
+            return Decision.Rollback(pendingVersionCode, fallbackVersionCode)
+        }
         if (marker != null && marker.versionCode == pendingVersionCode) {
             val decayed = nowMs - marker.lastAttemptAtMs > STRIKE_DECAY_MS
             if (!decayed && marker.uncleanCount >= maxStrikes) {
                 return Decision.Rollback(
                     badVersionCode = pendingVersionCode,
-                    fallbackVersionCode = previousVersionCode.takeIf { it > 0 },
+                    fallbackVersionCode = fallbackVersionCode,
                 )
             }
             val nextCount = if (decayed) 1 else marker.uncleanCount + 1

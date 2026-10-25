@@ -87,6 +87,50 @@ class ProviderAutoUpdatePolicyTest {
     }
 
     @Test
+    fun installAndUpdateFirstLaunchForceOneCheckIgnoringInterval() {
+        // 全新安装：没有上次版本记录。
+        assertTrue(
+            ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+                intervalHours = 6,
+                currentVersionCode = 230029,
+                seenVersionCode = 0,
+            ),
+        )
+        // 升级后的首次进入：即使间隔未到也补一次。
+        assertTrue(
+            ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+                intervalHours = 6,
+                currentVersionCode = 230029,
+                seenVersionCode = 230028,
+            ),
+        )
+        // 24 小时模式平时不随打开检查，但安装/升级后的首次进入仍要补一次。
+        assertTrue(
+            ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+                intervalHours = ProviderAutoUpdatePolicy.INTERVAL_PERIODIC_ONLY,
+                currentVersionCode = 230029,
+                seenVersionCode = 230028,
+            ),
+        )
+        // 同一版本再次进入不重复触发。
+        assertFalse(
+            ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+                intervalHours = 6,
+                currentVersionCode = 230029,
+                seenVersionCode = 230029,
+            ),
+        )
+        // 用户关闭自动更新时不强行联网。
+        assertFalse(
+            ProviderAutoUpdatePolicy.shouldCheckOnFirstLaunch(
+                intervalHours = ProviderAutoUpdatePolicy.INTERVAL_OFF,
+                currentVersionCode = 230029,
+                seenVersionCode = 230028,
+            ),
+        )
+    }
+
+    @Test
     fun choiceListCoversAllUiOptions() {
         assertEquals(
             listOf(0, 1, 2, 6, 12, 24),

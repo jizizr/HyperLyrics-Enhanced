@@ -10,28 +10,26 @@ class AppleDirectDiagnosticsWiringTest {
     private val root = listOf(File("app/src/main/java"), File("src/main/java")).first(File::isDirectory)
     private fun source(path: String) = File(root, path).readText()
     private val bridge get() = source("com/juren233/hyperlyricsenhanced/root/source/AppleMusicDirectBridge.kt")
-    private val player get() = source("io/github/proify/lyricon/amprovider/xposed/AppleDirectPlayer.kt")
 
-    @Test fun `both endpoints log finite recovery context and final budget as awaiting callback`() {
-        for (source in listOf(bridge, player)) {
-            assertTrue(source.contains("LyricRuntimeDiagnostics.record(stage)"))
-            assertTrue(source.contains("recoverySequence++"))
-            assertTrue(source.contains("recoveryReason = reason"))
-            assertTrue(source.contains("bridgeInstance=\$bridgeInstance recoverySequence=\$recoverySequence"))
-            assertTrue(source.contains(".snapshot(SystemClock.elapsedRealtime()).diagnosticFields()"))
-            assertTrue(source.contains("recoveryDiagnostic(\"direct_recovery_scheduled\")"))
-            assertTrue(source.contains("recoveryDiagnostic(\"direct_recovery_attempt\", \"state=awaiting_callback\")"))
-            assertTrue(source.contains("recoveryDiagnostic(\"direct_recovery_budget_consumed\", \"state=awaiting_callback\")"))
-            assertTrue(source.contains("recoveryDiagnostic(\"direct_recovery_connected\", \"receiverRegistered=true\")"))
-        }
+    @Test fun `bridge logs finite recovery context and final budget as awaiting callback`() {
+        assertTrue(bridge.contains("LyricRuntimeDiagnostics.record(stage)"))
+        assertTrue(bridge.contains("recoverySequence++"))
+        assertTrue(bridge.contains("recoveryReason = reason"))
+        assertTrue(bridge.contains("bridgeInstance=\$bridgeInstance recoverySequence=\$recoverySequence"))
+        assertTrue(bridge.contains(".snapshot(SystemClock.elapsedRealtime()).diagnosticFields()"))
+        assertTrue(bridge.contains("recoveryDiagnostic(\"direct_recovery_scheduled\")"))
+        assertTrue(bridge.contains("recoveryDiagnostic(\"direct_recovery_attempt\", \"state=awaiting_callback\")"))
+        assertTrue(bridge.contains("recoveryDiagnostic(\"direct_recovery_budget_consumed\", \"state=awaiting_callback\")"))
+        assertTrue(bridge.contains("recoveryDiagnostic(\"direct_recovery_connected\", \"receiverRegistered=true\")"))
     }
 
     @Test fun `identity send logging uses SDK data and leaves API34 calls inside the guarded branch`() {
         val adapter = source("com/juren233/hyperlyricsenhanced/common/bridge/AppleDirectBroadcastIdentity.kt")
         val send = adapter.substringAfter("internal fun Context.sendAppleDirectBroadcast(intent: Intent) {")
             .substringBefore("internal fun BroadcastReceiver.appleDirectSenderIdentity")
-        assertTrue(send.contains("LyricRuntimeDiagnostics.record(\"direct_broadcast_sending\")"))
-        assertTrue(send.contains("sdk=\${Build.VERSION.SDK_INT} shareIdentityEnabled=\${Build.VERSION.SDK_INT >= 34}"))
+        assertTrue(send.contains("AppleSourceSwitchPerformanceDiagnostics.enabled"))
+        assertTrue(send.contains("stage=direct_broadcast_sending sdk=\${Build.VERSION.SDK_INT}"))
+        assertTrue(send.contains("shareIdentityEnabled=\${Build.VERSION.SDK_INT >= 34}"))
         val beforeSdkBranch = send.substringBefore("if (Build.VERSION.SDK_INT >= 34)")
         assertFalse(beforeSdkBranch.contains("BroadcastOptions.makeBasic()"))
         assertFalse(beforeSdkBranch.contains("sentFromUid"))

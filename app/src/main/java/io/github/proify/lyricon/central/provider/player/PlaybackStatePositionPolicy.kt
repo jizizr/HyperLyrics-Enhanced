@@ -7,7 +7,7 @@
 package io.github.proify.lyricon.central.provider.player
 
 import android.media.session.PlaybackState
-import io.github.proify.lyricon.provider.PlaybackStateActivityPolicy
+import com.juren233.hyperlyricsenhanced.contract.PlaybackStateActivityPolicy
 
 /**
  * Keeps playback activity separate from timeline advancement.

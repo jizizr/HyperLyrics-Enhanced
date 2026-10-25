@@ -36,9 +36,16 @@ object OfficialProviderInstaller {
             manifest.pluginId,
             manifest.versionCode,
         )
-        val previousVersionCode = PrefsBridge.getInt(
-            OfficialProviderCatalog.installedVersionKey(manifest.pluginId),
-            0,
+        val previousVersionCode = previousVersionAfterInstall(
+            installedVersionCode = PrefsBridge.getInt(
+                OfficialProviderCatalog.installedVersionKey(manifest.pluginId),
+                0,
+            ),
+            recordedPreviousVersionCode = PrefsBridge.getInt(
+                OfficialProviderCatalog.previousVersionKey(manifest.pluginId),
+                0,
+            ),
+            newVersionCode = manifest.versionCode,
         )
         // 记住写文件用的 service 实例：写完文件后它可能掉线（RootApplication.xposedService
         // 变 null），届时 PrefsBridge 的远程同步会被静默跳过，目标进程只能读到旧的
@@ -56,6 +63,10 @@ object OfficialProviderInstaller {
             OfficialProviderCatalog.enabledKey(manifest.pluginId),
             true,
         )
+        PrefsBridge.putBoolean(
+            OfficialProviderCatalog.removedKey(manifest.pluginId),
+            false,
+        )
         PrefsBridge.putInt(
             OfficialProviderCatalog.installedVersionKey(manifest.pluginId),
             manifest.versionCode,
@@ -64,13 +75,12 @@ object OfficialProviderInstaller {
             OfficialProviderCatalog.installedVersionNameKey(manifest.pluginId),
             manifest.versionName,
         )
-        if (previousVersionCode > 0 && previousVersionCode != manifest.versionCode) {
-            // 保留上一版本号与文件，崩溃回退时目标进程改载上一版。
-            PrefsBridge.putInt(
-                OfficialProviderCatalog.previousVersionKey(manifest.pluginId),
-                previousVersionCode,
-            )
-        }
+        // 保留上一版本号与文件，崩溃回退时目标进程改载上一版；没有可用上一版时清零，
+        // 避免留下指向已清理文件的旧记录。
+        PrefsBridge.putInt(
+            OfficialProviderCatalog.previousVersionKey(manifest.pluginId),
+            previousVersionCode,
+        )
         manifest.targetPackages.forEach { packageName ->
             PrefsBridge.putString(
                 OfficialProviderCatalog.activeFileKey(packageName),
@@ -94,6 +104,23 @@ object OfficialProviderInstaller {
         return manifest
     }
 
+    /**
+     * 安装后的「上一版本」：只能是比新版本低的版本。
+     *
+     * - 升级：原已装版本成为上一版本；
+     * - 重装同版本或降级（例如脱离坏版本）：原已装版本不能当回退目标，沿用原记录中
+     *   仍低于新版本的上一版本，否则为 0。
+     */
+    internal fun previousVersionAfterInstall(
+        installedVersionCode: Int,
+        recordedPreviousVersionCode: Int,
+        newVersionCode: Int,
+    ): Int = when {
+        installedVersionCode in 1 until newVersionCode -> installedVersionCode
+        recordedPreviousVersionCode in 1 until newVersionCode -> recordedPreviousVersionCode
+        else -> 0
+    }
+
     /** 用写文件时捕获的 service 直接补推安装记录，覆盖「写完文件 service 掉线」的窗口。 */
     private fun ensureRemotePreferenceSync(
         service: io.github.libxposed.service.XposedService?,
@@ -105,6 +132,7 @@ object OfficialProviderInstaller {
         runCatching {
             service.getRemotePreferences(UIConstants.PREF_NAME).edit().apply {
                 putBoolean(OfficialProviderCatalog.enabledKey(manifest.pluginId), true)
+                putBoolean(OfficialProviderCatalog.removedKey(manifest.pluginId), false)
                 putInt(
                     OfficialProviderCatalog.installedVersionKey(manifest.pluginId),
                     manifest.versionCode,
@@ -113,12 +141,10 @@ object OfficialProviderInstaller {
                     OfficialProviderCatalog.installedVersionNameKey(manifest.pluginId),
                     manifest.versionName,
                 )
-                if (previousVersionCode > 0 && previousVersionCode != manifest.versionCode) {
-                    putInt(
-                        OfficialProviderCatalog.previousVersionKey(manifest.pluginId),
-                        previousVersionCode,
-                    )
-                }
+                putInt(
+                    OfficialProviderCatalog.previousVersionKey(manifest.pluginId),
+                    previousVersionCode,
+                )
                 manifest.targetPackages.forEach { packageName ->
                     putString(OfficialProviderCatalog.activeFileKey(packageName), remoteName)
                 }
@@ -212,6 +238,7 @@ object OfficialProviderInstaller {
                 ?.forEach(File::delete)
         }
         PrefsBridge.putBoolean(OfficialProviderCatalog.enabledKey(pluginId), false)
+        PrefsBridge.putBoolean(OfficialProviderCatalog.removedKey(pluginId), true)
         PrefsBridge.putInt(OfficialProviderCatalog.installedVersionKey(pluginId), 0)
         PrefsBridge.putString(OfficialProviderCatalog.installedVersionNameKey(pluginId), null)
         PrefsBridge.putInt(OfficialProviderCatalog.previousVersionKey(pluginId), 0)
