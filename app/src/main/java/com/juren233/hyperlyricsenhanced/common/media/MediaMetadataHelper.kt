@@ -149,10 +149,12 @@ object MediaMetadataHelper {
             generation = mediaInfoGeneration
         }
         return try {
-            val result = findController(context, packageName)?.metadata?.toMediaInfo(
+            val controller = findController(context, packageName)
+            val result = controller?.metadata?.toMediaInfo(
                 context = context.applicationContext ?: context,
                 packageName = packageName,
                 logger = logger,
+                playbackState = runCatching { controller.playbackState }.getOrNull(),
             ) ?: return MediaInfo()
             val mediaInfo = result.info
             if (mediaInfo.title.isNotBlank() || mediaInfo.artist.isNotBlank() ||
@@ -227,7 +229,8 @@ object MediaMetadataHelper {
     ): ArtworkCaptureToken? {
         if (packageName.isBlank()) return null
         return runCatching {
-            val metadata = findController(context, packageName)?.metadata ?: return null
+            val controller = findController(context, packageName) ?: return null
+            val metadata = controller.metadata ?: return null
             val snapshot = metadata.snapshot()
             val cacheKey = buildArtworkCacheKey(
                 packageName = packageName,
@@ -237,11 +240,17 @@ object MediaMetadataHelper {
                 album = snapshot.album,
                 duration = snapshot.duration,
             ) ?: return null
+            // 令牌里的标题要与歌词侧的歌名比对（currentCachedArtwork），所以用还原后的文本；缓存键仍用原始字段。
+            val verdict = MediaSessionMetadataAdapter.processVerdict(
+                packageName,
+                metadata,
+                runCatching { controller.playbackState }.getOrNull(),
+            )
             ArtworkCaptureToken(
                 packageName = packageName,
                 cacheKey = cacheKey,
-                title = snapshot.title,
-                artist = snapshot.artist,
+                title = verdict?.titleOr(snapshot.title) ?: snapshot.title,
+                artist = verdict?.artistOr(snapshot.artist) ?: snapshot.artist,
                 album = snapshot.album,
             )
         }.getOrNull()
@@ -305,19 +314,25 @@ object MediaMetadataHelper {
         current: MediaInfo = getMediaInfo(context, packageName)
     ): MediaInfo = getNextMediaLookup(context, packageName, current).mediaInfo
 
+    /**
+     * [lyricTitle]/[lyricArtist] 是同一播放器包的歌词侧歌名/歌手（Provider 发布）。车载歌词改写会话时，
+     * [current] 的标题是歌词行，下一首控制帧却以还原后的歌名为键，只有歌词侧文本能对上。
+     */
     fun getNextMediaLookup(
         context: Context,
         packageName: String,
-        current: MediaInfo = getMediaInfo(context, packageName)
+        current: MediaInfo = getMediaInfo(context, packageName),
+        lyricTitle: String? = null,
+        lyricArtist: String? = null,
     ): NextMediaLookup {
         if (packageName.isEmpty()) return NextMediaLookup(reason = "package_empty")
         if (!OfficialProviderCatalog.supportsNextTrackPreview(packageName)) {
             return NextMediaLookup(reason = "next_track_unsupported")
         }
         // 预览窗口内每个位置 tick 都会调用；失败结果短缓存，避免反复做跨进程查询。
-        val failureKey = nextLookupFailureKey(packageName, current)
+        val failureKey = nextLookupFailureKey(packageName, current, lyricTitle, lyricArtist)
         cachedNextLookupFailure(failureKey)?.let { return it }
-        val result = lookupNextMedia(context, packageName, current)
+        val result = lookupNextMedia(context, packageName, current, lyricTitle, lyricArtist)
         if (result.mediaInfo.title.isBlank()) {
             rememberNextLookupFailure(failureKey, result)
         }
@@ -328,6 +343,8 @@ object MediaMetadataHelper {
         context: Context,
         packageName: String,
         current: MediaInfo,
+        lyricTitle: String?,
+        lyricArtist: String?,
     ): NextMediaLookup {
         return try {
             val controller = findController(context, packageName)
@@ -335,9 +352,13 @@ object MediaMetadataHelper {
             val currentMediaId = controller.metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
             NextTrackMetadataCache.find(
                 playerPackageName = packageName,
-                currentId = currentMediaId,
-                currentTitle = current.title,
-                currentArtist = current.artist,
+                currentTracks = NextTrackMetadataCache.currentTrackKeys(
+                    currentId = currentMediaId,
+                    currentTitle = current.title,
+                    currentArtist = current.artist,
+                    lyricTitle = lyricTitle,
+                    lyricArtist = lyricArtist,
+                ),
             )?.let { next ->
                 return NextMediaLookup(
                     mediaInfo = MediaInfo(
@@ -381,8 +402,13 @@ object MediaMetadataHelper {
         }
     }
 
-    private fun nextLookupFailureKey(packageName: String, current: MediaInfo): String =
-        "$packageName\u001F${current.title}\u001F${current.artist}\u001F${current.duration}"
+    private fun nextLookupFailureKey(
+        packageName: String,
+        current: MediaInfo,
+        lyricTitle: String?,
+        lyricArtist: String?,
+    ): String = "$packageName\u001F${current.title}\u001F${current.artist}\u001F${current.duration}" +
+        "\u001F${lyricTitle.orEmpty()}\u001F${lyricArtist.orEmpty()}"
 
     private fun cachedNextLookupFailure(key: String): NextMediaLookup? =
         synchronized(nextLookupFailureLock) {
@@ -629,8 +655,12 @@ object MediaMetadataHelper {
         context: Context,
         packageName: String,
         logger: HyperLogger?,
+        playbackState: PlaybackState?,
     ): MediaInfoResult {
         val snapshot = snapshot()
+        // 对外的标题/歌手是展示与比对文本，车载歌词改写过的会话在这里还原；缓存键与身份签名仍用原始字段，
+        // 它们在单曲内稳定，恢复发生在单曲中途时不应让缓存失效。
+        val verdict = MediaSessionMetadataAdapter.processVerdict(packageName, this, playbackState)
         val cacheKey = buildArtworkCacheKey(
             packageName = packageName,
             mediaId = snapshot.mediaId,
@@ -649,8 +679,8 @@ object MediaMetadataHelper {
         )
         return MediaInfoResult(
             info = MediaInfo(
-                title = snapshot.title,
-                artist = snapshot.artist,
+                title = verdict?.titleOr(snapshot.title) ?: snapshot.title,
+                artist = verdict?.artistOr(snapshot.artist) ?: snapshot.artist,
                 album = snapshot.album,
                 albumArt = artwork?.bitmap,
                 duration = snapshot.duration,

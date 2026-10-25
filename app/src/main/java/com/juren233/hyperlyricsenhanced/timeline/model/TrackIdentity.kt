@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.timeline.model
 
+import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataSanitizer
 import kotlinx.serialization.Serializable
 import java.util.Locale
 
@@ -18,6 +19,15 @@ import java.util.Locale
  * （trim 后以 \u001F 连接），保证两侧对同一首歌得到相同键。
  *
  * 任何模糊匹配（标题相似、时长接近）都禁止进入身份判定；模糊候选只能用于 shadow 对比。
+ *
+ * [polluted] 为 true 表示会话被车载歌词改写且真实标题/歌手无法确定：[title] 留空，
+ * [artist] 保存会话里单曲内稳定的原始歌手串，仅用于身份键与匹配，**不得用于展示**
+ * （展示用 [displayTitle]/[displayArtist]，应用歌词内容时改用已匹配歌曲的名称与歌手）。
+ *
+ * [trackToken] 是净化器给当前曲目段的编号，只在净化器判定换曲时才变。会话里的歌手、专辑、
+ * 时长在曲首都可能被播放器改动（酷狗：专辑从空串补全、时长取整、歌手被拼成「歌手-歌名」），
+ * 恢复出干净名称又会再改一次 [artist]；任何由这些字段拼出的键都会把同一首歌当成换曲。
+ * 没有 mediaId 的会话因此用编号作键，null 表示没有经过净化器。
  */
 @Serializable
 data class TrackIdentity(
@@ -27,7 +37,15 @@ data class TrackIdentity(
     val artist: String = "",
     val album: String = "",
     val durationMs: Long = 0L,
+    val polluted: Boolean = false,
+    val trackToken: String? = null,
 ) {
+    /** 可展示的标题：被污染且无法恢复时为空，而不是歌词行。 */
+    val displayTitle: String get() = if (polluted) "" else title
+
+    /** 可展示的歌手：被污染时 [artist] 是原始组合串，不能展示。 */
+    val displayArtist: String get() = if (polluted) "" else artist
+
     private fun normalizedParts(): List<String> = listOf(
         packageName.trim(),
         title.trim(),
@@ -52,14 +70,32 @@ data class TrackIdentity(
         .lowercase(Locale.ROOT)
         .filter(Char::isLetterOrDigit)
 
-    /** 规范化键。QQ HD 使用歌名和歌手，其余播放器优先使用 mediaId。 */
+    /**
+     * 规范化键（锚点侧的换曲判据，不参与跨进程严格匹配）。QQ HD 使用歌名和歌手，其余播放器
+     * 优先使用 mediaId。
+     *
+     * 没有 mediaId 时，只要时长已知且歌手或专辑非空，键就不含标题：时长精确到毫秒，再叠加歌手与
+     * 专辑，足以区分曲目；而标题是会话里最容易变的字段（车载歌词逐句改写、占位标题更新），
+     * 让它进入键会使同一首歌的每次标题变化都被当成换曲、清空时间轴。时长未知时无法区分，
+     * 仍使用含标题的组合键。
+     *
+     * 同样条件下若有 [trackToken]，键就是包名加编号，不再读歌手、专辑和时长：这三个字段在曲首
+     * 都可能被改动，见类说明。编号的换曲判定沿用同样的信号（时长容差、专辑、进度归零），
+     * 只是对曲首补全与改写不敏感。
+     */
     fun normalizedKey(): String {
         qqMusicHdKey()?.let { return it }
         val id = mediaId?.trim().orEmpty()
-        return if (id.isNotEmpty()) {
-            listOf(packageName.trim(), id).joinToString(SEPARATOR.toString())
-        } else {
-            compositeKey()
+        val token = trackToken?.trim().orEmpty()
+        val hasKeyFields = durationMs > 0L && (artist.isNotBlank() || album.isNotBlank())
+        return when {
+            id.isNotEmpty() -> listOf(packageName.trim(), id).joinToString(SEPARATOR.toString())
+            hasKeyFields && token.isNotEmpty() ->
+                listOf(packageName.trim(), token).joinToString(SEPARATOR.toString())
+            hasKeyFields ->
+                listOf(packageName.trim(), artist.trim(), album.trim(), durationMs.toString())
+                    .joinToString(SEPARATOR.toString())
+            else -> compositeKey()
         }
     }
 
@@ -109,6 +145,19 @@ data class TrackIdentity(
         val otherId = other.mediaId?.trim().orEmpty()
         if (selfId.isNotEmpty() && otherId.isNotEmpty()) return selfId == otherId
 
+        // 一侧的歌手串恰好能由另一侧的歌名+歌手拼出，说明它来自被改写的会话，
+        // 不必等净化器累计到足够的漂移证据，标题同样不可信。
+        val untrusted = when {
+            polluted -> this
+            other.polluted -> other
+            MediaSessionMetadataSanitizer.combinedExplains(artist, other.title, other.artist) -> this
+            MediaSessionMetadataSanitizer.combinedExplains(other.artist, title, artist) -> other
+            else -> null
+        }
+        if (untrusted != null) {
+            return matchesUntrustedFields(untrusted, if (untrusted === this) other else this)
+        }
+
         val selfTitle = title.trim()
         val otherTitle = other.title.trim()
         if (selfTitle.isNotEmpty() && otherTitle.isNotEmpty() && selfTitle != otherTitle) return false
@@ -125,7 +174,35 @@ data class TrackIdentity(
             (selfTitle.isNotEmpty() && otherTitle.isNotEmpty())
     }
 
+    /**
+     * 一侧来自被车载歌词改写的会话（[polluted]，或歌手串能被另一侧拼出）：标题不可信，不参与比较。已匹配的歌曲必须能拼出会话里
+     * 稳定的原始歌手串（歌名与歌手任意顺序、任意分隔符），这是只有同一首歌才会满足的条件。
+     * 原始歌手串本身是干净歌手时（只有标题被改写）无法区分同歌手的不同歌，
+     * 额外要求专辑相同，或时长都已知且相差不超过 [ARTIST_ONLY_DURATION_TOLERANCE_MS]。
+     */
+    private fun matchesUntrustedFields(untrusted: TrackIdentity, trusted: TrackIdentity): Boolean {
+        val untrustedAlbum = untrusted.album.trim()
+        val trustedAlbum = trusted.album.trim()
+        val albumsKnownEqual = untrustedAlbum.isNotEmpty() && trustedAlbum.isNotEmpty() &&
+            untrustedAlbum.equals(trustedAlbum, ignoreCase = true)
+        if (untrustedAlbum.isNotEmpty() && trustedAlbum.isNotEmpty() && !albumsKnownEqual) return false
+
+        val rawArtist = untrusted.artist.trim()
+        if (rawArtist.isEmpty()) return false
+        if (trusted.polluted) return rawArtist.equals(trusted.artist.trim(), ignoreCase = true)
+
+        if (MediaSessionMetadataSanitizer.combinedExplains(rawArtist, trusted.title, trusted.artist)) return true
+
+        val sameArtistOnly = MediaSessionMetadataSanitizer.normalizeForMatch(rawArtist) ==
+            MediaSessionMetadataSanitizer.normalizeForMatch(trusted.artist)
+        if (!sameArtistOnly) return false
+        val durationsKnownClose = untrusted.durationMs > 0L && trusted.durationMs > 0L &&
+            kotlin.math.abs(untrusted.durationMs - trusted.durationMs) <= ARTIST_ONLY_DURATION_TOLERANCE_MS
+        return albumsKnownEqual || durationsKnownClose
+    }
+
     companion object {
+        private const val ARTIST_ONLY_DURATION_TOLERANCE_MS = 5_000L
         private const val SEPARATOR = '\u001F'
         private const val QQ_MUSIC_HD_PACKAGE = "com.tencent.qqmusicpad"
     }

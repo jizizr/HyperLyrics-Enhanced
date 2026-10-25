@@ -140,7 +140,11 @@ class LyricInfoSource(private val context: Context) : LyricSource {
             return
         }
 
-        val track = SystemMediaPlaybackAnchor.buildTrackIdentity(packageName, metadata)
+        val track = SystemMediaPlaybackAnchor.buildTrackIdentity(
+            packageName,
+            metadata,
+            runCatching { controller.playbackState }.getOrNull(),
+        )
         logDiagnosis(raw)
         val song = LyricInfoParser.parse(raw, track.title, track.artist)
         if (song?.lyrics.isNullOrEmpty()) return

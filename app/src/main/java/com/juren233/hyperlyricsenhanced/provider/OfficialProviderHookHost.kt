@@ -228,6 +228,16 @@ internal class OfficialProviderHookHost(
         metadataCallback: OfficialProviderMetadataCallback,
     ) {
         val metadataGate = OfficialProviderMediaSessionMetadataGate()
+        val metadataFeed = OfficialProviderMetadataFeed(
+            playerPackageName = packageName,
+            applicationProvider = ::findCurrentApplication,
+            notificationAnchors = true,
+            diagnostic = if (BuildConfig.DEBUG) {
+                { message -> module.log(Log.INFO, tag, message) }
+            } else {
+                null
+            },
+        )
         val mediaSessionClass = Class.forName(
             MediaSession::class.java.name,
             false,
@@ -247,6 +257,7 @@ internal class OfficialProviderHookHost(
                     callback = playbackStateCallback,
                     metadataCallback = metadataCallback,
                     metadataGate = metadataGate,
+                    metadataFeed = metadataFeed,
                 ),
             )
         }
@@ -263,6 +274,7 @@ internal class OfficialProviderHookHost(
                     packageName = packageName,
                     callback = metadataCallback,
                     metadataGate = metadataGate,
+                    metadataFeed = metadataFeed,
                 ),
             )
         }
@@ -499,6 +511,7 @@ internal class OfficialProviderHookHost(
         private val callback: OfficialProviderPlaybackStateCallback,
         private val metadataCallback: OfficialProviderMetadataCallback,
         private val metadataGate: OfficialProviderMediaSessionMetadataGate,
+        private val metadataFeed: OfficialProviderMetadataFeed,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
         private val callbackSequence = AtomicLong(0L)
@@ -508,7 +521,7 @@ internal class OfficialProviderHookHost(
             host.ensureApplicationDispatched("media_session_playback_state")
             val state = chain.args.firstOrNull() as? PlaybackState
             val sequence = callbackSequence.incrementAndGet()
-            deliverCurrentMetadataSnapshot(chain.thisObject as? MediaSession)
+            deliverCurrentMetadataSnapshot(chain.thisObject as? MediaSession, state)
             runCatching {
                 callback.onPlaybackStateChanged(state)
             }.onSuccess {
@@ -543,7 +556,7 @@ internal class OfficialProviderHookHost(
             return result
         }
 
-        private fun deliverCurrentMetadataSnapshot(session: MediaSession?) {
+        private fun deliverCurrentMetadataSnapshot(session: MediaSession?, state: PlaybackState?) {
             val snapshot = runCatching { session?.controller?.metadata }
                 .onFailure { error ->
                     module.log(
@@ -557,7 +570,9 @@ internal class OfficialProviderHookHost(
             when (metadataGate.claimSnapshot(session, snapshot != null)) {
                 OfficialProviderMediaSessionMetadataGate.SnapshotDecision.DELIVER -> {
                     runCatching {
-                        metadataCallback.onMetadataChanged(snapshot)
+                        metadataCallback.onMetadataChanged(
+                            metadataFeed.filter(snapshot, state, session?.sessionToken),
+                        )
                     }.onSuccess {
                         if (BuildConfig.DEBUG) {
                             module.log(
@@ -606,6 +621,7 @@ internal class OfficialProviderHookHost(
         private val packageName: String,
         private val callback: OfficialProviderMetadataCallback,
         private val metadataGate: OfficialProviderMediaSessionMetadataGate,
+        private val metadataFeed: OfficialProviderMetadataFeed,
     ) : XposedInterface.Hooker {
         private val firstCallbackRecorded = AtomicBoolean(false)
 
@@ -615,7 +631,14 @@ internal class OfficialProviderHookHost(
             val session = chain.thisObject
             metadataGate.recordExplicit(session)
             runCatching {
-                callback.onMetadataChanged(chain.args.firstOrNull() as? MediaMetadata)
+                val mediaSession = session as? MediaSession
+                callback.onMetadataChanged(
+                    metadataFeed.filter(
+                        metadata = chain.args.firstOrNull() as? MediaMetadata,
+                        playbackState = runCatching { mediaSession?.controller?.playbackState }.getOrNull(),
+                        sessionToken = mediaSession?.sessionToken,
+                    ),
+                )
             }.onSuccess {
                 if (firstCallbackRecorded.compareAndSet(false, true)) {
                     module.log(

@@ -95,4 +95,58 @@ class NextTrackMetadataStoreTest {
         assertNull(store.find("com.tencent.qqmusic", "1", "First", "Artist"))
         assertEquals("Third", store.find("com.tencent.qqmusic", "2", "Second", "Artist")?.title)
     }
+
+    @Test
+    fun `finds the next song through the lyric side name when the session text is a lyric line`() {
+        // 酷狗：会话标题是歌词行、歌手是「歌手-歌名」，控制帧用 Provider 还原后的歌名/歌手。
+        store.update(
+            playerPackageName = "com.kugou.android",
+            currentId = "kugou:abc",
+            currentTitle = "后来的我们",
+            currentArtist = "五月天",
+            metadata = NextTrackMetadata("def", "倔强", "五月天", "", -1L),
+        )
+        val sessionKey = CurrentTrackKey(null, "就这么朝着未来前进了", "五月天-后来的我们")
+        val lyricKey = CurrentTrackKey(null, "后来的我们", "五月天")
+
+        assertNull(store.findFirst("com.kugou.android", listOf(sessionKey)))
+        assertEquals("倔强", store.findFirst("com.kugou.android", listOf(sessionKey, lyricKey))?.title)
+    }
+
+    @Test
+    fun `session key wins over the lyric side key when both match`() {
+        store.update("com.kugou.android", "", "Session Song", "Artist", NextTrackMetadata("2", "From Session", "A", "", -1L))
+        store.update("com.kugou.android", "", "Lyric Song", "Artist", NextTrackMetadata("3", "From Lyric", "A", "", -1L))
+
+        assertEquals(
+            "From Session",
+            store.findFirst(
+                "com.kugou.android",
+                listOf(
+                    CurrentTrackKey(null, "Session Song", "Artist"),
+                    CurrentTrackKey(null, "Lyric Song", "Artist"),
+                ),
+            )?.title,
+        )
+    }
+
+    @Test
+    fun `lyric side key does not cross players and respects expiry`() {
+        store.update("com.kugou.android", "", "Song", "Artist", NextTrackMetadata("2", "Next", "A", "", -1L))
+        val keys = listOf(
+            CurrentTrackKey(null, "lyric line", "Artist-Song"),
+            CurrentTrackKey(null, "Song", "Artist"),
+        )
+
+        assertNull(store.findFirst("com.netease.cloudmusic", keys))
+        now += 5_001L
+        assertNull(store.findFirst("com.kugou.android", keys))
+    }
+
+    @Test
+    fun `an empty key list finds nothing`() {
+        store.update("com.kugou.android", "", "Song", "Artist", NextTrackMetadata("2", "Next", "A", "", -1L))
+
+        assertNull(store.findFirst("com.kugou.android", emptyList()))
+    }
 }

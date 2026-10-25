@@ -30,6 +30,13 @@ internal class OfficialProviderSystemMediaHostImpl(
         Application.MEDIA_SESSION_SERVICE,
     ) as MediaSessionManager
     private val subscriptions = CopyOnWriteArraySet<Subscription>()
+
+    /** SystemUI 进程读不到播放器的通知，没有通知锚点；仍可恢复「标题带歌手」这类自证形态。 */
+    private val metadataFeed = OfficialProviderMetadataFeed(
+        playerPackageName = playerPackageName,
+        applicationProvider = { application },
+        notificationAnchors = false,
+    )
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
 
     private var trackedController: MediaController? = null
@@ -159,8 +166,8 @@ internal class OfficialProviderSystemMediaHostImpl(
     private fun dispatch() {
         if (released || !started || cleanupFailure != null) return
         val controller = trackedController
-        val metadata = controller?.metadata
         val state = controller?.playbackState
+        val metadata = metadataFeed.filter(controller?.metadata, state, controller?.sessionToken)
         subscriptions.forEach { subscription ->
             if (!subscription.released) {
                 runCatching { subscription.callback.onMediaChanged(metadata, state) }

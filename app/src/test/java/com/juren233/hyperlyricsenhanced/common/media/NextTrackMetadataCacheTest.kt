@@ -6,6 +6,7 @@
 
 package com.juren233.hyperlyricsenhanced.common.media
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,6 +67,58 @@ class NextTrackMetadataCacheTest {
                 "com.salt.music",
                 officialProviderPreference = false,
             ),
+        )
+    }
+
+    @Test
+    fun `lookup keys put the session text first and the lyric side name second`() {
+        val keys = NextTrackMetadataCache.currentTrackKeys(
+            currentId = null,
+            currentTitle = "就这么朝着未来前进了",
+            currentArtist = "五月天-后来的我们",
+            lyricTitle = "后来的我们",
+            lyricArtist = "五月天",
+        )
+
+        assertEquals(
+            listOf(
+                CurrentTrackKey(null, "就这么朝着未来前进了", "五月天-后来的我们"),
+                CurrentTrackKey(null, "后来的我们", "五月天"),
+            ),
+            keys,
+        )
+    }
+
+    @Test
+    fun `lookup keys ignore a missing or blank lyric side name`() {
+        val session = CurrentTrackKey("id", "Title", "Artist")
+
+        assertEquals(
+            listOf(session),
+            NextTrackMetadataCache.currentTrackKeys("id", "Title", "Artist", null, "Artist"),
+        )
+        assertEquals(
+            listOf(session),
+            NextTrackMetadataCache.currentTrackKeys("id", "Title", "Artist", "   ", "Artist"),
+        )
+    }
+
+    @Test
+    fun `lookup keys trim the lyric side text and tolerate a missing lyric artist`() {
+        assertEquals(
+            listOf(
+                CurrentTrackKey("id", "lyric", "x"),
+                CurrentTrackKey("id", "Song", ""),
+            ),
+            NextTrackMetadataCache.currentTrackKeys("id", "lyric", "x", "  Song ", null),
+        )
+    }
+
+    @Test
+    fun `lookup keys do not repeat the session key when the lyric side agrees`() {
+        assertEquals(
+            listOf(CurrentTrackKey(null, "Song", "Artist")),
+            NextTrackMetadataCache.currentTrackKeys(null, "Song", "Artist", "Song", "Artist"),
         )
     }
 }

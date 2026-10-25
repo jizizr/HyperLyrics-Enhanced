@@ -18,6 +18,9 @@ import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
 import com.juren233.hyperlyricsenhanced.common.media.MediaMetadataHelper
+import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataAdapter
+import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataSanitizer
+import com.juren233.hyperlyricsenhanced.common.media.SanitizedTrack
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeResourceCleanup
 import com.juren233.hyperlyricsenhanced.root.utils.RuntimeCallbackGate
@@ -197,6 +200,7 @@ class SystemMediaPlaybackAnchor(
         timelineAdvancing = false
         playStartedAtMs.clear()
         lastObservedState.clear()
+        MediaSessionMetadataAdapter.resetProcessState()
         cleanupFailure = cleanup.failureOrNull()
         cleanupFailure?.let { throw it }
     }
@@ -311,7 +315,7 @@ class SystemMediaPlaybackAnchor(
         val metadata = runCatching { controller.metadata }.getOrNull()
         val state = runCatching { controller.playbackState }.getOrNull()
 
-        val track = metadata?.let { buildTrackIdentity(controller.packageName ?: "", it) }
+        val track = metadata?.let { buildTrackIdentity(controller.packageName ?: "", it, state) }
         if (track?.normalizedKey() != currentTrack?.normalizedKey()) {
             currentTrack = track
             // 新会话/新曲目未采到自己的位置前，旧锚点绝不得被新内容沿用。
@@ -431,14 +435,21 @@ class SystemMediaPlaybackAnchor(
          * 与应用进程 MetadataSource.syncToGlobalData 完全一致的规范化：
          * title 取首个非空行并 trim（缺省 "Playing~"），artist/album 原样。
          * 两键不一致会导致快照身份匹配失败，禁止单侧调整。
+         *
+         * 例外：车载歌词污染证据成立时改用净化结果（见 [MediaSessionMetadataSanitizer]）；
+         * 无证据的曲目与上述规则逐字段一致。
          */
-        fun buildTrackIdentity(packageName: String, metadata: MediaMetadata): TrackIdentity {
+        fun buildTrackIdentity(
+            packageName: String,
+            metadata: MediaMetadata,
+            playbackState: PlaybackState? = null,
+        ): TrackIdentity {
             val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
                 ?.lines()
                 ?.firstOrNull { it.isNotBlank() }
                 ?.trim()
                 ?: "Playing~"
-            return TrackIdentity(
+            val raw = TrackIdentity(
                 packageName = packageName,
                 mediaId = runCatching {
                     metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
@@ -448,6 +459,26 @@ class SystemMediaPlaybackAnchor(
                 album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: "",
                 durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
             )
+            // 车载歌词会把会话标题改成逐句漂移的歌词行、歌手改成「歌名-歌手」，酷狗还会在曲首补全
+            // 专辑、取整时长。身份键因此只认净化器的曲目编号（见 TrackIdentity.trackToken）。
+            // Apple Music 与净化器失败没有编号，沿用原有身份规则（见 processVerdict）。
+            val verdict = MediaSessionMetadataAdapter.processVerdict(packageName, metadata, playbackState)
+                ?: return raw
+            val tracked = raw.copy(trackToken = verdict.trackToken)
+            return when (verdict.status) {
+                SanitizedTrack.Status.CLEAN -> tracked
+                // 恢复发生在单曲中途：展示用的歌手变了，键由编号决定，不受影响。
+                SanitizedTrack.Status.RECOVERED -> tracked.copy(
+                    title = verdict.titleOr(raw.title),
+                    artist = verdict.artistOr(raw.artist),
+                )
+                // 真实标题无法确定：身份保留单曲内稳定的原始歌手串，标题留空，展示交给已匹配的歌词内容。
+                SanitizedTrack.Status.UNRESOLVED -> tracked.copy(
+                    title = "",
+                    artist = verdict.identityArtist,
+                    polluted = true,
+                )
+            }
         }
     }
 }

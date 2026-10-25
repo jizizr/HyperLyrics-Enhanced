@@ -20,6 +20,16 @@ internal data class NextTrackMetadata(
     val durationMs: Long,
 )
 
+/**
+ * 查找下一首时对「当前曲」的一种称呼。同一首歌可以有几种：会话里的原始文本，
+ * 以及歌词侧（Provider 发布、不受会话改写影响）的歌名/歌手。
+ */
+internal data class CurrentTrackKey(
+    val id: String?,
+    val title: String,
+    val artist: String,
+)
+
 internal class NextTrackMetadataStore(
     private val nowMs: () -> Long,
     private val ttlMs: Long,
@@ -75,16 +85,29 @@ internal class NextTrackMetadataStore(
         entries.keys.removeAll { it.playerPackageName in playerPackageNames }
     }
 
-    @Synchronized
     fun find(
         playerPackageName: String,
         currentId: String?,
         currentTitle: String,
         currentArtist: String,
+    ): NextTrackMetadata? = findFirst(
+        playerPackageName,
+        listOf(CurrentTrackKey(currentId, currentTitle, currentArtist)),
+    )
+
+    /** 按 [currentTracks] 的顺序逐个称呼查找，返回第一个命中的下一首。 */
+    @Synchronized
+    fun findFirst(
+        playerPackageName: String,
+        currentTracks: List<CurrentTrackKey>,
     ): NextTrackMetadata? {
         pruneExpired()
-        return identityAliases(currentId.orEmpty(), currentTitle, currentArtist)
-            .firstNotNullOfOrNull { alias -> entries[CacheKey(playerPackageName, alias)]?.metadata }
+        return currentTracks.firstNotNullOfOrNull { current ->
+            identityAliases(current.id.orEmpty(), current.title, current.artist)
+                .firstNotNullOfOrNull { alias ->
+                    entries[CacheKey(playerPackageName, alias)]?.metadata
+                }
+        }
     }
 
     private fun pruneExpired() {
@@ -162,15 +185,27 @@ internal object NextTrackMetadataCache {
 
     fun find(
         playerPackageName: String,
+        currentTracks: List<CurrentTrackKey>,
+    ): NextTrackMetadata? = store.findFirst(playerPackageName, currentTracks)
+
+    /**
+     * 会话文本（[currentTitle]/[currentArtist]）排在前面；歌词侧歌名/歌手非空时作为第二个称呼。
+     * 车载歌词改写过的会话里，会话文本是歌词行或「歌手-歌名」，而控制帧用的是 Provider 还原后的
+     * 歌名/歌手，只有歌词侧的称呼能对上。歌词侧文本必须来自同一个播放器包，由调用方保证。
+     */
+    fun currentTrackKeys(
         currentId: String?,
         currentTitle: String,
         currentArtist: String,
-    ): NextTrackMetadata? = store.find(
-        playerPackageName,
-        currentId,
-        currentTitle,
-        currentArtist,
-    )
+        lyricTitle: String?,
+        lyricArtist: String?,
+    ): List<CurrentTrackKey> {
+        val session = CurrentTrackKey(currentId, currentTitle, currentArtist)
+        val title = lyricTitle?.trim().orEmpty()
+        if (title.isEmpty()) return listOf(session)
+        val lyric = CurrentTrackKey(currentId, title, lyricArtist?.trim().orEmpty())
+        return listOf(session, lyric).distinct()
+    }
 
     fun clearPlayers(playerPackageNames: Set<String>) {
         store.clearPlayers(playerPackageNames)

@@ -404,7 +404,17 @@ class LocalTimelineDriver(
                 // 锚点让位后切回的曲目：暂存内容不匹配（或没有）时回放缓存内容。
                 // 缓存键是锚点规范化键，应用时已经过一次身份校验；这里不再重复
                 // 标题级匹配，否则原名刷新后的回放会被组合键标题差异误拒。
+                // 车载歌词污染确认前，锚点键随歌词行翻转过；确认后键不再变化，
+                // 之前应用过的同曲内容按污染感知的身份匹配找回，而不是等来源重发。
                 val cached = appliedContentCache[track.normalizedKey()]
+                    ?: if (track.polluted) {
+                        appliedContentCache.values.lastOrNull {
+                            TimelineContentPolicy.decide(activeSourceId, track, it) ==
+                                TimelineContentPolicy.Decision.APPLY
+                        }
+                    } else {
+                        null
+                    }
                 if (cached != null && cached.sourceId == activeSourceId) {
                     applyContent(cached)
                     diagnostic("锚点切回，回放缓存内容: ${track.normalizedKey()}")
@@ -423,6 +433,21 @@ class LocalTimelineDriver(
             }
             val appliedContent = appliedContentCache[track.normalizedKey()]
                 ?.takeIf { it.sourceId == activeSourceId }
+            if (TimelineContentPolicy.isSessionTextUntrusted(track, appliedContent?.song)) {
+                // 会话标题/歌手被车载歌词改写：展示已应用歌词内容里的名称，没有则清空歌词行；
+                // 污染确认前暂存的内容此时才能按污染感知的身份匹配，补一次应用。
+                pendingContent?.let { pending ->
+                    if (TimelineContentPolicy.decide(activeSourceId, track, pending) ==
+                        TimelineContentPolicy.Decision.APPLY
+                    ) {
+                        applyContent(pending)
+                        return@runOnMain
+                    }
+                }
+                val shown = TimelineContentPolicy.displayMetadata(track, appliedContent?.song)
+                renderSink.onMetadata(shown.title, shown.artist, track.album, track.packageName)
+                return@runOnMain
+            }
             if (!XiaomiMusicMetadataRefreshPolicy.shouldForward(
                     packageName = track.packageName,
                     sameAppliedTrack = appliedTrackKey == track.normalizedKey(),
@@ -591,7 +616,8 @@ class LocalTimelineDriver(
         } else {
             renderSink.onSongChanged(song)
         }
-        renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
+        val shown = TimelineContentPolicy.displayMetadata(track, song)
+        renderSink.onMetadata(shown.title, shown.artist, track.album, track.packageName)
         resetSourceClock()
         timelinePosition()?.let(renderSink::onPositionChanged)
         refreshRenderPlaybackState()
@@ -622,8 +648,8 @@ class LocalTimelineDriver(
                 appliedTrackKey = trackKey
                 appliedPackageName = track.packageName
                 renderSink.onTrackTransition(
-                    title = track.title,
-                    artist = track.artist,
+                    title = track.displayTitle,
+                    artist = track.displayArtist,
                     album = track.album,
                     publisher = track.packageName,
                 )
@@ -664,7 +690,7 @@ class LocalTimelineDriver(
             }
             fallbackTrack?.let { track ->
                 onLyricPlayerConfirmed(track.packageName)
-                publishTitleFallback(track, track.title)
+                publishTitleFallback(track, track.displayTitle)
             }
         }
     }
@@ -675,8 +701,8 @@ class LocalTimelineDriver(
         appliedTrackKey = track.normalizedKey()
         appliedPackageName = track.packageName
         LyriconDataBridge.updateLyricPackage(track.packageName)
-        LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.title }
-        renderSink.onMetadata(track.title, track.artist, track.album, track.packageName)
+        LyriconDataBridge.currentSongName = fallbackTitle.ifBlank { track.displayTitle }
+        renderSink.onMetadata(track.displayTitle, track.displayArtist, track.album, track.packageName)
         timelinePosition()?.let(renderSink::onPositionChanged)
         refreshRenderPlaybackState()
         diagnostic("标题回退已绑定: pkg=${track.packageName}, key=$appliedTrackKey, playing=$renderedPlaying")
@@ -689,8 +715,8 @@ class LocalTimelineDriver(
         appliedTrackKey = track.normalizedKey()
         appliedPackageName = track.packageName
         renderSink.onTrackTransition(
-            title = track.title,
-            artist = track.artist,
+            title = track.displayTitle,
+            artist = track.displayArtist,
             album = track.album,
             publisher = track.packageName,
         )
@@ -717,8 +743,8 @@ class LocalTimelineDriver(
                 track = track,
                 song = Song(
                     id = trackKey,
-                    name = track.title,
-                    artist = track.artist,
+                    name = track.displayTitle,
+                    artist = track.displayArtist,
                     duration = track.durationMs,
                     lyrics = streamingLines.values.sortedBy { it.begin },
                 ),

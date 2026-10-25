@@ -927,7 +927,15 @@ object BaseIslandRenderer : IslandRenderer {
         }
 
         if (previewState == null) {
-            val nextLookup = MediaMetadataHelper.getNextMediaLookup(cv.context, packageName, mediaInfo)
+            // 歌词侧歌名只在歌词来自同一个播放器时才可信，否则会把别的播放器的歌当成当前曲。
+            val lyricSong = song?.takeIf { LyriconDataBridge.currentLyricPackageName == packageName }
+            val nextLookup = MediaMetadataHelper.getNextMediaLookup(
+                context = cv.context,
+                packageName = packageName,
+                current = mediaInfo,
+                lyricTitle = lyricSong?.name,
+                lyricArtist = lyricSong?.artist,
+            )
             val nextSong = nextLookup.mediaInfo
             if (nextSong.title.isBlank()) {
                 val failureSignature = "${mediaInfo.title}|$duration|${nextLookup.reason}"

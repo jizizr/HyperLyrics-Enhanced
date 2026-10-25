@@ -6,6 +6,8 @@
 
 package com.juren233.hyperlyricsenhanced.root.timeline
 
+import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataSanitizer
+import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.source.TimelineContent
 import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 
@@ -39,6 +41,27 @@ object TimelineContentPolicy {
         }
         return if (matches) Decision.APPLY else Decision.DROP_WRONG_TRACK
     }
+
+    data class DisplayMetadata(val title: String, val artist: String)
+
+    /**
+     * 会话文本（标题、歌手）是否不可信：已被净化器判定为污染，或其歌手串恰好能由已匹配歌曲的
+     * 歌名与歌手拼出。后一条让污染确认前的头几秒也能用歌曲自己的名称，不必等漂移证据累计。
+     */
+    fun isSessionTextUntrusted(track: TrackIdentity, song: Song?): Boolean =
+        track.polluted ||
+            (song != null && MediaSessionMetadataSanitizer.combinedExplains(track.artist, song.name, song.artist))
+
+    /**
+     * 渲染面显示的歌曲名与歌手。会话文本可信时沿用会话；不可信时改用已匹配歌曲的名称与歌手，
+     * 没有歌曲内容时留空，而不是显示歌词行。
+     */
+    fun displayMetadata(track: TrackIdentity, song: Song?): DisplayMetadata =
+        if (isSessionTextUntrusted(track, song)) {
+            DisplayMetadata(song?.name.orEmpty().trim(), song?.artist.orEmpty().trim())
+        } else {
+            DisplayMetadata(track.title, track.artist)
+        }
 
     /**
      * 已应用内容由歌词源以自身包名声明、且与媒体锚点同包时，返回该播放器包名。
