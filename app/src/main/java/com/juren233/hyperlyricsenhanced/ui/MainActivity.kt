@@ -1,5 +1,6 @@
 package com.juren233.hyperlyricsenhanced.ui
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -12,6 +13,7 @@ import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.provider.auto.ProviderAutoUpdateScheduler
 import com.juren233.hyperlyricsenhanced.ui.navigation.AppNavigation
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshRequest
 import com.juren233.hyperlyricsenhanced.ui.utils.AppUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.LocaleUtils
 import com.juren233.hyperlyricsenhanced.ui.utils.ThemeUtils
@@ -57,6 +59,9 @@ class MainActivity : ComponentActivity() {
         // 后台插件自动更新：注册周期任务，并按节流触发一次打开 App 的检查。
         ProviderAutoUpdateScheduler.onAppOpened(this)
 
+        // 从插件更新通知进入：首页据此打开一键刷新面板（重建时不重复处理）。
+        if (savedInstanceState == null) OneTapRefreshRequest.handle(intent)
+
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
 
@@ -67,6 +72,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        OneTapRefreshRequest.handle(intent)
     }
 
     override fun onStart() {

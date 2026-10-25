@@ -10,6 +10,9 @@ sealed interface Route : NavKey {
     data object Setup : Route
     @Serializable
     data object Main : Route
+    /** 从设置页回顾基础设置流程；完成后返回设置页。 */
+    @Serializable
+    data object SetupReview : Route
 
     /**
      * 应用设置页。

@@ -18,7 +18,8 @@ import kotlinx.coroutines.withContext
  * 后台自动更新已安装且已启用的插件（HLE 插件化计划 1.3）。
  *
  * 只在 Xposed service 已绑定的前提下工作：安装一律走 Remote File 并写后校验，
- * service 未就绪由 Worker 重试，不允许退回应用私有目录。
+ * service 未就绪由 Worker 重试，不允许退回应用私有目录。每个插件更新成功后发一条通知，
+ * 提醒用户重启对应的音乐 App 以加载新插件。
  */
 object OfficialProviderAutoUpdater {
 
@@ -54,6 +55,7 @@ object OfficialProviderAutoUpdater {
                     requireRemoteFile = true,
                 )
                 updated += item.catalog.id
+                ProviderUpdateNotifier.notifyUpdated(context, item.catalog)
                 OfficialProviderAcquisitionLog.info(
                     "插件后台自动更新完成: id=${item.catalog.id} " +
                         "${item.installedVersionCode} -> ${release.versionCode}",

@@ -2,6 +2,8 @@ package com.juren233.hyperlyricsenhanced.ui.navigation
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -9,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
@@ -17,10 +20,16 @@ import top.yukonga.miuix.kmp.nav.core.NavKey
 import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
+import top.yukonga.miuix.kmp.nav.transition.NavTransition
 import kotlin.reflect.KClass
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.ui.page.MainPage
 import com.juren233.hyperlyricsenhanced.ui.page.SetupPage
+import com.juren233.hyperlyricsenhanced.ui.page.setup.LocalSetupOutro
+import com.juren233.hyperlyricsenhanced.ui.page.setup.SetupOutroAwareTransition
+import com.juren233.hyperlyricsenhanced.ui.page.setup.SetupOutroHost
+import com.juren233.hyperlyricsenhanced.ui.page.setup.rememberSetupOutroController
+import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroDestination
 import com.juren233.hyperlyricsenhanced.ui.page.LicensesPage
 import com.juren233.hyperlyricsenhanced.ui.page.LogPage
 import com.juren233.hyperlyricsenhanced.ui.page.SettingsPage
@@ -63,13 +72,14 @@ private fun contentFor(key: NavKey): @Composable (NavKey) -> Unit {
 
 private inline fun <reified T : Route> NavEntryBuilder.appEntry(
     swipeDismiss: NavSwipeDirection = NavSwipeDirection.LeftToRight,
+    transition: NavTransition? = null,
     noinline content: @Composable (T) -> Unit,
 ) {
     @Suppress("UNCHECKED_CAST")
     RouteContentRegistry.contents[T::class] = { key -> content(key as T) }
     // contentKey 同时是 saveable 状态身份且必须能进 Bundle（NavSaveableStateHolder 的
     // SaveableStateProvider 限制），data object 路由实例本身不可存，用其值派生字符串
-    entry(contentKey = { it.toString() }, swipeDismiss = swipeDismiss, content = content)
+    entry(contentKey = { it.toString() }, transition = transition, swipeDismiss = swipeDismiss, content = content)
 }
 
 @Composable
@@ -106,19 +116,31 @@ fun AppNavigation(startRoute: Route) {
     // 「滑动手势返回上一页」开关：关闭后窄屏 NavDisplay 不挂载滑动返回手势
     val swipeDismiss = if (swipeBackGestureEnabled) NavSwipeDirection.LeftToRight else NavSwipeDirection.None
 
-    CompositionLocalProvider(LocalNavigator provides navigator) {
+    // 基础设置完成转场的图标画在导航之上，跨越页面切换继续演出。
+    val setupOutro = rememberSetupOutroController()
+    val setupOutroTransition = remember(setupOutro) { SetupOutroAwareTransition(setupOutro) }
+
+    CompositionLocalProvider(LocalNavigator provides navigator, LocalSetupOutro provides setupOutro) {
         // 路由注册的单一事实源：appEntry 同时填充宽屏注册表并完成窄屏 entry 注册。
         val entryBuilder: NavEntryBuilder.() -> Unit = {
-            appEntry<Route.Setup>(swipeDismiss = swipeDismiss) {
+            appEntry<Route.Setup>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) {
                 SetupPage(onNavigateToMain = {
                     navigator.popUpTo(Route.Setup, inclusive = true)
                     navigator.navigate(Route.Main)
                 })
             }
-            appEntry<Route.Main>(swipeDismiss = swipeDismiss) { MainPage() }
+            appEntry<Route.SetupReview>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) {
+                SetupPage(onNavigateToMain = { navigator.popUpTo(Route.SetupReview, inclusive = true) })
+            }
+            // 基础设置完成转场结束时，主页面与设置页以逐项浮现的样式显露。
+            appEntry<Route.Main>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) {
+                Box(Modifier.setupOutroDestination(setupOutro)) { MainPage() }
+            }
 
-            appEntry<Route.Settings>(swipeDismiss = swipeDismiss) { settings ->
-                SettingsPage(scrollToFeatureSwitches = settings.scrollToFeatureSwitches)
+            appEntry<Route.Settings>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) { settings ->
+                Box(Modifier.setupOutroDestination(setupOutro)) {
+                    SettingsPage(scrollToFeatureSwitches = settings.scrollToFeatureSwitches)
+                }
             }
             appEntry<Route.HookSettings>(swipeDismiss = swipeDismiss) { HookSettingsPage() }
             appEntry<Route.AppleMusicOptimization>(swipeDismiss = swipeDismiss) { AppleMusicOptimizationPage() }
@@ -148,18 +170,21 @@ fun AppNavigation(startRoute: Route) {
         // 宽屏时 NavDisplay 不组合、其 builder 不会执行，组合期间无条件预热一次注册表
         remember { NavEntryBuilder().apply(entryBuilder) }
 
-        if (parallelWindowUi) {
-            ParallelWorldNavDisplay(backStack, ::contentFor)
-        } else {
-            NavDisplay(
-                backStack = backStack,
-                onBack = { navigator.pop() },
-                // 默认半径为 0；转场页面的可见边缘应跟随设备屏幕圆角。
-                effects = NavDisplayEffects(
-                    cornerClipRadius = rememberNavSystemCornerRadius(),
-                ),
-                content = entryBuilder,
-            )
+        Box(Modifier.fillMaxSize()) {
+            if (parallelWindowUi) {
+                ParallelWorldNavDisplay(backStack, ::contentFor)
+            } else {
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { navigator.pop() },
+                    // 默认半径为 0；转场页面的可见边缘应跟随设备屏幕圆角。
+                    effects = NavDisplayEffects(
+                        cornerClipRadius = rememberNavSystemCornerRadius(),
+                    ),
+                    content = entryBuilder,
+                )
+            }
+            SetupOutroHost(setupOutro)
         }
     }
 }

@@ -300,13 +300,18 @@ internal class OneTapRefreshController(
      * 打开刷新面板。
      *
      * [appleMusicOnly] 为 true 时只保留系统界面与 Apple Music 两个选项。
+     * [preselectedPackages] 非空时只预先勾选其中列出的音乐 App（如插件更新通知指向的 App），
+     * 列表里没有任何一个时退回默认勾选。
      */
-    fun open(appleMusicOnly: Boolean = false) {
+    fun open(appleMusicOnly: Boolean = false, preselectedPackages: Collection<String>? = null) {
         targets = OneTapRefreshCatalog.refreshTargets(
             packageManager = LocaleUtils.systemLanguageContext(context).packageManager,
             appleMusicOnly = appleMusicOnly,
         )
-        selectedIds = OneTapRefreshSelectionPolicy.defaultSelection(targets)
+        val preselected = preselectedPackages
+            ?.filterTo(linkedSetOf()) { it in musicAppIds }
+            .orEmpty()
+        selectedIds = preselected.ifEmpty { OneTapRefreshSelectionPolicy.defaultSelection(targets) }
         showDialog = true
         rootCheckSequence += 1L
         val checkSequence = rootCheckSequence

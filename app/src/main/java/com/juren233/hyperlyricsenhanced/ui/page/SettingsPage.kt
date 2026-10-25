@@ -613,4 +613,16 @@ private fun LazyListScope.settingsSections(
             }
         }
     }
+    item(key = "misc_title") {
+        SmallTitle(text = stringResource(R.string.title_misc))
+    }
+    item(key = "misc_content") {
+        val navigator = LocalNavigator.current
+        Card(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+            ArrowPreference(
+                title = stringResource(R.string.title_review_setup),
+                onClick = { navigator.navigate(Route.SetupReview) },
+            )
+        }
+    }
 }

@@ -98,6 +98,7 @@ import com.juren233.hyperlyricsenhanced.ui.page.main.MainTabPolicy
 import com.juren233.hyperlyricsenhanced.ui.page.main.UnsupportedDevicePage
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.AppleMusicOptimizationPage
 import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshHost
+import com.juren233.hyperlyricsenhanced.ui.page.main.OneTapRefreshRequest
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberOneTapRefreshController
 import com.juren233.hyperlyricsenhanced.ui.page.main.rememberMainPagerState
 import kotlinx.coroutines.launch
@@ -256,6 +257,12 @@ fun MainPage() {
     val oneTapRefresh = rememberOneTapRefreshController(snackbarHostState)
     val onOneTapRefreshClick: () -> Unit = {
         oneTapRefresh.open(appleMusicOnly = !homePageVisible)
+    }
+    // 从插件更新通知进入：打开一键刷新面板并预先勾选对应音乐 App，由用户自己确认是否重启。
+    val pendingRefreshPackages by OneTapRefreshRequest.pendingPackages.collectAsState()
+    LaunchedEffect(pendingRefreshPackages) {
+        val packages = OneTapRefreshRequest.consume() ?: return@LaunchedEffect
+        oneTapRefresh.open(appleMusicOnly = !homePageVisible, preselectedPackages = packages)
     }
 
     // --- pref listener ---
