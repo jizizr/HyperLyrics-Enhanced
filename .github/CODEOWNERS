@@ -1,0 +1,6 @@
+* @juren233
+
+# 影响构建、发布与同步
+/.github/ @juren233
+/scripts/ @juren233
+/app/build.gradle.kts @juren233

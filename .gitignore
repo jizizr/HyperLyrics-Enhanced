@@ -33,6 +33,8 @@ DEBUGGING_MISTAKES.md
 apks/
 scripts/*
 !scripts/sync_shared_to_providers.py
+!scripts/pairing_notify.py
+!scripts/test_pairing_notify.py
 .zcodeignore
 .tmp-hle-logs/
 .zcode/

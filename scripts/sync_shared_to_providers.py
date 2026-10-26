@@ -97,11 +97,11 @@ def relative_files(root: pathlib.Path) -> set[pathlib.Path]:
 
 def copy_file(source: pathlib.Path, target: pathlib.Path, check: bool, problems: list[str]) -> None:
     if not source.is_file():
-        problems.append(f"缺少源文件: {source}")
+        problems.append(f"缺少源文件 / missing source file: {source}")
         return
     if check:
         if not target.is_file() or target.read_bytes() != source.read_bytes():
-            problems.append(f"内容不一致: {target}")
+            problems.append(f"内容不一致 / content differs: {target}")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
@@ -123,9 +123,9 @@ def sync_tree(
         for relative in sorted(source_files):
             target = target_root / relative
             if not target.is_file() or target.read_bytes() != (source_root / relative).read_bytes():
-                problems.append(f"内容不一致: {target}")
+                problems.append(f"内容不一致 / content differs: {target}")
         for extra in sorted(target_files - source_files):
-            problems.append(f"目标侧多出文件: {target_root / extra}")
+            problems.append(f"目标侧多出文件 / extra file on the target side: {target_root / extra}")
         return
 
     target_root.mkdir(parents=True, exist_ok=True)
@@ -137,21 +137,62 @@ def sync_tree(
         (target_root / extra).unlink()
 
 
+def source_entries() -> list[str]:
+    """核心仓库中参与同步的路径；以 / 结尾的是整个目录，其余是单个文件。"""
+    entries = [SHARED_API, *SHARED_FILES]
+    for source_relative in SHARED_TREES:
+        if source_relative.endswith("/common/lyric"):
+            entries.extend(f"{source_relative}/{name}" for name in POLICY_FILES)
+        else:
+            entries.append(f"{source_relative}/")
+    return entries
+
+
+def target_entries() -> list[str]:
+    """HLE-Providers 中由本脚本写入的路径；同步会删除目录中多余的 .kt，因此整个目录都算。"""
+    entries = [f"providers/{plugin_id}/{API_TARGET}" for plugin_id in PLUGIN_IDS]
+    entries.extend(f"providers/applemusic/{target}" for target in SHARED_FILES.values())
+    entries.extend(f"providers/applemusic/{target}/" for target in SHARED_TREES.values())
+    return entries
+
+
+def is_shared(path: str, entries: list[str]) -> bool:
+    return any(path == entry or (entry.endswith("/") and path.startswith(entry)) for entry in entries)
+
+
+def filter_paths(side: str) -> int:
+    """从标准输入读取路径（每行一个），只输出属于同步范围的路径。"""
+    entries = source_entries() if side == "sources" else target_entries()
+    for line in sys.stdin:
+        path = line.rstrip("\n")
+        if path and is_shared(path, entries):
+            print(path)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--providers-repo", help="HLE-Providers 仓库路径（默认同级目录）")
     parser.add_argument("--check", action="store_true", help="只比较，不写入")
+    parser.add_argument(
+        "--filter",
+        choices=("sources", "targets"),
+        help="从标准输入读取路径，只输出属于核心仓库原件（sources）或 HLE-Providers 副本（targets）的路径",
+    )
     args = parser.parse_args()
+
+    if args.filter:
+        return filter_paths(args.filter)
 
     providers = providers_root(args.providers_repo)
     if not (providers / "settings.gradle.kts").is_file():
-        raise SystemExit(f"HLE-Providers 路径无效: {providers}")
+        raise SystemExit(f"HLE-Providers 路径无效 / invalid HLE-Providers path: {providers}")
 
     problems: list[str] = []
     for plugin_id in PLUGIN_IDS:
         module = providers / "providers" / plugin_id
         if not module.is_dir():
-            problems.append(f"缺少 Provider 模块: {module}")
+            problems.append(f"缺少 Provider 模块 / missing provider module: {module}")
             continue
         copy_file(
             CORE_ROOT / SHARED_API,
@@ -180,11 +221,11 @@ def main() -> int:
         )
 
     if problems:
-        print("共享源码不同步：", file=sys.stderr)
+        print("共享源码不同步 / shared sources are out of sync:", file=sys.stderr)
         for problem in problems:
             print(f"- {problem}", file=sys.stderr)
         return 1
-    print("共享源码已同步" if not args.check else "共享源码一致")
+    print("共享源码已同步 / shared sources synced" if not args.check else "共享源码一致 / shared sources match")
     return 0
 
 

@@ -1,0 +1,34 @@
+name: Pairing Notify
+
+# 在 PR 上发配对提醒评论，并在配对 PR 变化时重跑 HLE-Providers 一侧的配对检查。
+# 用 pull_request_target 才能在 fork 的 PR 里拿到 Secret 和写评论的令牌，所以必须遵守：
+#   1. 不检出、不运行 PR 里的任何代码（checkout 默认检出默认分支）；
+#   2. PR 描述只当数据：编号只取纯数字，文件名只输出命中同步范围白名单的路径；
+#   3. CROSS_REPO_TOKEN 只需要 HLE-Providers 的 Actions 写权限，用于重跑检查。
+# 逻辑集中在 scripts/pairing_notify.py，HLE-Providers 的同名工作流运行的也是这份脚本。
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# 与 pairing-result.yml 同组，保证同一提交上的评论更新依次执行。
+concurrency:
+  group: pairing-comment-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Post reminder and re-run the paired check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: python3 scripts/pairing_notify.py --side core

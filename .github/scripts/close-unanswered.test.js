@@ -154,11 +154,13 @@ test('PR 提交时间同时考虑 author date 与 committer date 中较新者', 
 test('自动回复文案保持为约定文本', () => {
     assert.equal(
         ISSUE_TIMEOUT_MESSAGE,
-        '当前 issue 已超时一周尚未回复，将默认当前 issue 已解决，如后续仍有问题，请开新的 issue 进行反馈，当前 issue 将被关闭！',
+        '当前 issue 已超时一周尚未回复，将默认当前 issue 已解决，如后续仍有问题，请开新的 issue 进行反馈，当前 issue 将被关闭！\n\n' +
+            "This issue has had no reply for over a week since the maintainer's last comment, so it is assumed to be resolved and will now be closed. If you still have problems, please open a new issue.",
     );
     assert.equal(
         PR_TIMEOUT_MESSAGE,
-        '当前 PR 已超时三十天尚未回复且尚无新提交，将默认当前 PR 已不再维护，如后续仍有需要，请开新的 PR 进行申请，当前 PR 将被关闭！',
+        '当前 PR 已超时三十天尚未回复且尚无新提交，将默认当前 PR 已不再维护，如后续仍有需要，请开新的 PR 进行申请，当前 PR 将被关闭！\n\n' +
+            "This PR has had no reply for over thirty days since the maintainer's last comment and has no new commits, so it is assumed to be no longer maintained and will now be closed. If you still need it, please open a new PR.",
     );
 });
 

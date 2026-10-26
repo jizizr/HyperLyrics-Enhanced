@@ -1,0 +1,65 @@
+name: Shared Sources Pairing Check
+
+# 不使用 pull_request_target，不引用任何 Secret；fork 的 PR 只拿到只读令牌。
+# 与 HLE-Providers 的 pr-check.yml 互为镜像：那边拉本仓库的 PR，这边拉那边的 PR。
+# PR 评论提醒与对 HLE-Providers PR 的联动重跑在 pairing-notify.yml 中。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: shared-sources-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # 作业名称被 pairing-notify.yml 的重跑逻辑引用，修改时需同步。
+  pairing:
+    name: Shared sources match HLE-Providers
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Detect changes to shared sources
+        id: shared
+        run: |
+          changed=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" | python3 scripts/sync_shared_to_providers.py --filter sources)
+          if [ -z "$changed" ]; then
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+            echo "未改动与 HLE-Providers 共享的原件。 / No sources shared with HLE-Providers were changed."
+          else
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+            echo "改动了共享原件 / Shared sources changed:"
+            echo "$changed"
+          fi
+      - name: Check against the paired HLE-Providers PR
+        if: steps.shared.outputs.touched == 'true'
+        run: |
+          # 事件里的描述是触发时的快照，重跑时会过期，所以每次都从接口读取最新描述。
+          body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""')
+          providers_pr=$(printf '%s\n' "$body" | sed -nE 's/^[[:space:]]*Providers-PR:[[:space:]]*#?([0-9]+).*/\1/p' | head -n1)
+          if [ -z "$providers_pr" ]; then
+            echo "::error::此 PR 修改了与 HLE-Providers 共享的原件，但描述里没有 Providers-PR: <编号>。请在 HLE-Providers 提配对 PR（其描述写 Core-PR: $PR_NUMBER），再回来补上编号（见 CONTRIBUTING.md）。 / This PR changes sources shared with HLE-Providers but its description has no Providers-PR: <number>. Open the paired PR in HLE-Providers (its description should say Core-PR: $PR_NUMBER), then add that number here (see CONTRIBUTING.md)."
+            exit 1
+          fi
+          git clone --quiet https://github.com/juren233/HLE-Providers.git "$RUNNER_TEMP/providers"
+          if ! git -C "$RUNNER_TEMP/providers" fetch --quiet origin "pull/$providers_pr/head:providers-pr"; then
+            echo "::error::描述里的 Providers-PR: $providers_pr 在 HLE-Providers 中不存在，请改成正确的 PR 编号。 / Providers-PR: $providers_pr in the description does not exist in HLE-Providers; please fix the PR number."
+            exit 1
+          fi
+          git -C "$RUNNER_TEMP/providers" checkout --quiet providers-pr
+          echo "对照 HLE-Providers PR #$providers_pr / Comparing with HLE-Providers PR #$providers_pr"
+          if ! python3 scripts/sync_shared_to_providers.py --check --providers-repo "$RUNNER_TEMP/providers"; then
+            echo "::error::HLE-Providers PR #$providers_pr 里的共享副本与本 PR 的原件不一致。请在本仓库运行 python3 scripts/sync_shared_to_providers.py --providers-repo <HLE-Providers 路径> 重新生成副本，并推送到那个 PR。 / The shared copies in HLE-Providers PR #$providers_pr differ from the sources in this PR. Run python3 scripts/sync_shared_to_providers.py --providers-repo <path to HLE-Providers> in this repository to regenerate the copies, then push them to that PR."
+            exit 1
+          fi
