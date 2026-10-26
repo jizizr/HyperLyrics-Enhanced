@@ -83,13 +83,16 @@ import com.juren233.hyperlyricsenhanced.service.LiveLyricService
 import com.juren233.hyperlyricsenhanced.ui.navigation.LocalNavigator
 import com.juren233.hyperlyricsenhanced.ui.navigation.PARALLEL_WINDOW_DIVIDER_ALPHA
 import com.juren233.hyperlyricsenhanced.ui.navigation.Route
-import com.juren233.hyperlyricsenhanced.ui.utils.blurFadeExtension
+import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBottomBar
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
 import com.juren233.hyperlyricsenhanced.ui.utils.rememberIsWideScreen
-import com.juren233.hyperlyricsenhanced.ui.utils.rememberProgressiveBlurEnabled
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutPage
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroView
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutHeroVisualState
+import com.juren233.hyperlyricsenhanced.ui.page.setup.SetupOutroTrace
+import com.juren233.hyperlyricsenhanced.ui.page.setup.LocalSetupOutro
+import com.juren233.hyperlyricsenhanced.ui.page.main.HOME_SECTION_MAX
+import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroTraceLayout
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutDebugLog
 import com.juren233.hyperlyricsenhanced.ui.page.main.AboutDeviceInfoHelper
 import com.juren233.hyperlyricsenhanced.ui.page.main.HomePage
@@ -122,10 +125,8 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurColors
-import top.yukonga.miuix.kmp.blur.ProgressiveBlur
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.blur.progressiveTextureBlur
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Info
@@ -136,10 +137,29 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.core.net.toUri
 
 /** 底栏渐进模糊向上延伸的渐隐高度，与顶栏 PageUtils.TOP_BAR_BLUR_FADE_HEIGHT 一致。 */
-private val BOTTOM_BAR_BLUR_FADE_HEIGHT = 16.dp
 
+/*
+ * 完成转场显露主页面时的分帧组合阶段（由路由逐帧推进，见 rememberSetupOutroStage）：
+ * 空白（阶段 0，路由不组合主页面）→ 主页面状态与外框 → 底栏/侧栏 → 关于页背景与页面容器 → 页面框架 → 首页逐项 → 后台副作用。
+ */
+internal const val MAIN_STAGE_SHELL = 1
+private const val MAIN_STAGE_BARS = 2
+private const val MAIN_STAGE_PAGER = 3
+private const val MAIN_STAGE_PAGE = 4
+internal const val MAIN_PAGE_OUTRO_STAGES = MAIN_STAGE_PAGE + HOME_SECTION_MAX + 1
+
+/**
+ * @param outroStage 完成转场中分帧组合到的阶段（见 [MAIN_PAGE_OUTRO_STAGES]）；平时一次组合完整。
+ */
 @Composable
-fun MainPage() {
+fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
+    remember { SetupOutroTrace.mark("MainPage compose start") }
+    SideEffect { SetupOutroTrace.mark("MainPage applied") }
+    val stage = outroStage
+    // 绑定服务、读取迁移说明等后台副作用等页面组合完再执行，不挤进分帧组合的帧里。
+    val fullyComposed = stage >= MAIN_PAGE_OUTRO_STAGES
+    // 完成转场期间只组合当前页，相邻页在转场结束后再预加载。
+    val outroRunning = LocalSetupOutro.current?.request != null
     val context = LocalContext.current
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
@@ -260,7 +280,8 @@ fun MainPage() {
     }
     // 从插件更新通知进入：打开一键刷新面板并预先勾选对应音乐 App，由用户自己确认是否重启。
     val pendingRefreshPackages by OneTapRefreshRequest.pendingPackages.collectAsState()
-    LaunchedEffect(pendingRefreshPackages) {
+    LaunchedEffect(pendingRefreshPackages, fullyComposed) {
+        if (!fullyComposed) return@LaunchedEffect
         val packages = OneTapRefreshRequest.consume() ?: return@LaunchedEffect
         oneTapRefresh.open(appleMusicOnly = !homePageVisible, preselectedPackages = packages)
     }
@@ -296,7 +317,8 @@ fun MainPage() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(fullyComposed) {
+        if (!fullyComposed) return@LaunchedEffect
         val hasListenerPermission = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
         val isDynamicIslandEnabled = prefs.getBoolean(RootConstants.KEY_HOOK_ENABLE_DYNAMIC_ISLAND, RootConstants.DEFAULT_HOOK_ENABLE_DYNAMIC_ISLAND)
         val isClassicAodSongInfoEnabled = prefs.getBoolean(
@@ -361,7 +383,8 @@ fun MainPage() {
     var migrationNotes by remember { mutableStateOf<List<com.juren233.hyperlyricsenhanced.utils.MigrationNote>>(emptyList()) }
     var showMigrationDialog by remember { mutableStateOf(false) }
     val migrationTitle = stringResource(R.string.migration_dialog_title)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(fullyComposed) {
+        if (!fullyComposed) return@LaunchedEffect
         try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val currentVersion = PackageInfoCompat.getLongVersionCode(pInfo)
@@ -392,7 +415,8 @@ fun MainPage() {
     }
     val aboutDeviceModel = remember { AboutDeviceInfoHelper.resolveDeviceModel() }
     var aboutDeviceName by remember { mutableStateOf(AboutDeviceInfoHelper.resolveDeviceName(context)) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(fullyComposed) {
+        if (!fullyComposed) return@LaunchedEffect
         val rootName = withContext(Dispatchers.IO) {
             AboutDeviceInfoHelper.resolveDeviceNameWithRoot(context)
         }
@@ -508,102 +532,70 @@ fun MainPage() {
         snackbarHost = { SnackbarHost(state = snackbarHostState) },
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            AnimatedVisibility(
-                visible = showMainNavigation && !floatingNavBarEnabled && !parallelWindowUi,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-            ) {
-                val progressiveBlurEnabled = rememberProgressiveBlurEnabled()
-                Box(
-                    modifier = Modifier
-                        .then(
-                            if (outerBlurActive) {
-                                if (progressiveBlurEnabled) {
-                                    Modifier
-                                        // 渐隐带不计入测量高度：渐变仍按「栏高 + 渐隐带」计算，导航项仍位于原来的坐标，
-                                        // 页面内容不再被推下；溢出的渐隐带作为浮层盖在内容区底部。
-                                        .blurFadeExtension(extension = BOTTOM_BAR_BLUR_FADE_HEIGHT, extendUp = true)
-                                        .progressiveTextureBlur(
-                                            backdrop = outerBackdrop,
-                                            shape = RectangleShape,
-                                            blurRadius = 12f,
-                                            gradient = ProgressiveBlur.Bottom.copy(startFraction = 0.5f),
-                                            colors = BlurColors(
-                                                blendColors = listOf(
-                                                    BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
-                                                ),
-                                            ),
-                                        )
-                                        .padding(top = BOTTOM_BAR_BLUR_FADE_HEIGHT)
-                                } else {
-                                    Modifier.textureBlur(
-                                        backdrop = outerBackdrop,
-                                        shape = RectangleShape,
-                                        blurRadius = 12f,
-                                        colors = BlurColors(
-                                            blendColors = listOf(
-                                                BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
-                                            ),
-                                        ),
+            if (stage >= MAIN_STAGE_BARS) {
+                AnimatedVisibility(
+                    visible = showMainNavigation && !floatingNavBarEnabled && !parallelWindowUi,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                ) {
+                    BlurredBottomBar(outerBackdrop, outerBlurActive) {
+                        Box(
+                            modifier = Modifier
+                                .background(outerBarColor)
+                        ) {
+                            NavigationBar(color = outerBarColor, showDivider = false) {
+                                navItems.forEachIndexed { index, item ->
+                                    NavigationBarItem(
+                                        selected = mainPagerState.selectedPage == index,
+                                        onClick = { mainPagerState.animateToPage(index) },
+                                        icon = item.icon,
+                                        label = item.label
                                     )
                                 }
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .background(outerBarColor)
+                            }
+                        }
+                    }
+                }
+                AnimatedVisibility(
+                    visible = showMainNavigation && floatingNavBarEnabled && !parallelWindowUi,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
                 ) {
-                    NavigationBar(color = outerBarColor, showDivider = false) {
+                    val floatingBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
+                    val floatingBarShape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius)
+                    val isDark = isSystemInDarkTheme()
+                    val floatingHighlight = remember(isDark) {
+                        if (isDark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight
+                    }
+                    FloatingNavigationBar(
+                        modifier = (if (outerBlurActive) {
+                            Modifier
+                                .textureBlur(
+                                    backdrop = outerBackdrop,
+                                    shape = floatingBarShape,
+                                    blurRadius = 12f,
+                                    colors = BlurColors(
+                                        blendColors = listOf(
+                                            BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),
+                                        ),
+                                    ),
+                                    highlight = floatingHighlight,
+                                )
+                        } else {
+                            Modifier
+                        }).padding(horizontal = 12.dp),
+                        color = floatingBarColor,
+                    ) {
                         navItems.forEachIndexed { index, item ->
-                            NavigationBarItem(
+                            FloatingNavigationBarItem(
                                 selected = mainPagerState.selectedPage == index,
                                 onClick = { mainPagerState.animateToPage(index) },
                                 icon = item.icon,
                                 label = item.label
                             )
-                        }
-                    }
-                }
-            }
-            AnimatedVisibility(
-                visible = showMainNavigation && floatingNavBarEnabled && !parallelWindowUi,
-                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
-            ) {
-                val floatingBarColor = if (outerBlurActive) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer
-                val floatingBarShape = RoundedCornerShape(FloatingToolbarDefaults.CornerRadius)
-                val isDark = isSystemInDarkTheme()
-                val floatingHighlight = remember(isDark) {
-                    if (isDark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight
-                }
-                FloatingNavigationBar(
-                    modifier = (if (outerBlurActive) {
-                        Modifier
-                            .textureBlur(
-                                backdrop = outerBackdrop,
-                                shape = floatingBarShape,
-                                blurRadius = 12f,
-                                colors = BlurColors(
-                                    blendColors = listOf(
-                                        BlendColorEntry(color = MiuixTheme.colorScheme.surfaceContainer.copy(0.6f)),
-                                    ),
-                                ),
-                                highlight = floatingHighlight,
-                            )
-                    } else {
-                        Modifier
-                    }).padding(horizontal = 12.dp),
-                    color = floatingBarColor,
-                ) {
-                    navItems.forEachIndexed { index, item ->
-                        FloatingNavigationBarItem(
-                            selected = mainPagerState.selectedPage == index,
-                            onClick = { mainPagerState.animateToPage(index) },
-                            icon = item.icon,
-                            label = item.label
-                        )
-                        if (index < navItems.size - 1) {
-                            Spacer(Modifier.width(12.dp))
+                            if (index < navItems.size - 1) {
+                                Spacer(Modifier.width(12.dp))
+                            }
                         }
                     }
                 }
@@ -611,7 +603,7 @@ fun MainPage() {
         }
     ) { innerPadding ->
         Row(modifier = Modifier.fillMaxSize()) {
-            if (parallelWindowUi && showMainNavigation) {
+            if (parallelWindowUi && showMainNavigation && stage >= MAIN_STAGE_BARS) {
                 Box {
                     NavigationRail(state = navigationRailState, showDivider = false) {
                         navItems.forEachIndexed { index, item ->
@@ -636,89 +628,97 @@ fun MainPage() {
                 }
             }
             Box(
-                modifier = (if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier)
+                modifier = Modifier.setupOutroTraceLayout("BackdropBox")
+                    .then(if (outerBackdrop != null) Modifier.layerBackdrop(outerBackdrop) else Modifier)
                     .clipToBounds()
                     .overscroll(sharedOverscrollVisual)
                     .then(if (parallelWindowUi) Modifier.weight(1f) else Modifier),
             ) {
-                AndroidView(
-                    factory = { context -> AboutHeroView(context) },
-                    update = { view ->
-                        view.bind(appName, darkMode)
-                        view.updateVisualState(
-                            active = aboutPageInvolved,
-                            backgroundAlpha = aboutHeroVisualState.backgroundAlpha,
-                            logoAlpha = aboutHeroVisualState.logoAlpha * aboutHeroEntryAlpha,
-                            logoScale = aboutHeroVisualState.logoScale,
-                            scrollOffsetPx = aboutHeroVisualState.scrollOffsetPx,
-                            pageOffsetFraction = aboutPageOffsetFraction,
-                        )
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.imePadding(),
-                    beyondViewportPageCount = 1,
-                    verticalAlignment = Alignment.Top,
-                    overscrollEffect = pagerOverscrollEvents,
-                ) { page ->
-                    when (mainTabs.getOrNull(page)) {
-                        MainTab.Home -> HomePage(
-                            outerPadding = innerPadding,
-                            availableUpdateVersion = availableUpdate?.displayVersion,
-                            showHyperIslandEntry = hyperIslandEntryEnabled,
-                            showAodLyricsEntry = aodLyricsEntryEnabled,
-                            showDynamicIslandEntry = dynamicIslandEntryEnabled,
-                            lyricHookSwitches = lyricHookSwitches,
-                            enableHyperIsland = enableHyperIsland,
-                            onHyperIslandToggle = toggleHyperIsland,
-                            enableAodLyrics = enableAodLyrics,
-                            onAodLyricsToggle = toggleAodLyrics,
-                            onHyperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
-                            onHyperIslandTouchConfigClick = { navigator.navigate(Route.HyperIslandTouchSettings) },
-                            onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
-                            onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
-                            onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
-                            onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
-                            onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
-                            onRefreshClick = onOneTapRefreshClick,
-                            onAppSettingsClick = { navigator.navigate(Route.Settings()) },
-                        )
-                        MainTab.AppleMusic -> AppleMusicOptimizationPage(
-                            outerPadding = innerPadding,
-                            showNavigationIcon = false,
-                            // 主页仍在时左上角设置入口由主页提供，本页不重复显示；主页隐藏（本页即首页）时才显示。
-                            embeddedInMainPage = !homePageVisible,
-                            // 主页仍在时保持本页原有的标题 + 副标题，只有主页被隐藏（本页即首页）时才收起为应用名。
-                            collapseTitleToAppName = !homePageVisible,
-                            // 主页隐藏时本页即首页，顶栏右侧同样提供一键刷新入口。
-                            showRefreshAction = !homePageVisible,
-                            onRefreshClick = onOneTapRefreshClick,
-                            onAppSettingsClick = { navigator.navigate(Route.Settings()) },
-                        )
-                        MainTab.About -> AboutPage(
-                            outerPadding = innerPadding,
-                            aboutAppVersion = aboutAppVersion,
-                            availableUpdateVersion = availableUpdate?.displayVersion,
-                            aboutDeviceName = aboutDeviceName,
-                            aboutDeviceModel = aboutDeviceModel,
-                            aboutOsVersion = aboutOsVersion,
-                            aboutAndroidVersion = aboutAndroidVersion,
-                            onHelpClick = { navigator.navigate(Route.Help) },
-                            onLicensesClick = { navigator.navigate(Route.Licenses) },
-                            onChangelogClick = { navigator.navigate(Route.Changelog) },
-                            onContributorsClick = { navigator.navigate(Route.Contributors) },
-                            onHeroStateChanged = { state ->
-                                if (aboutHeroVisualState != state) {
-                                    aboutHeroVisualState = state
-                                }
-                            },
-                        )
-                        MainTab.Unsupported -> UnsupportedDevicePage(
-                            onEnterAppSettings = { navigator.navigate(Route.Settings(scrollToFeatureSwitches = true)) },
-                        )
-                        null -> Unit
+                if (stage >= MAIN_STAGE_PAGER) {
+                    AndroidView(
+                        factory = { context -> SetupOutroTrace.span("AboutHero create") { AboutHeroView(context) } },
+                        update = { view ->
+                            view.bind(appName, darkMode)
+                            view.updateVisualState(
+                                active = aboutPageInvolved,
+                                backgroundAlpha = aboutHeroVisualState.backgroundAlpha,
+                                logoAlpha = aboutHeroVisualState.logoAlpha * aboutHeroEntryAlpha,
+                                logoScale = aboutHeroVisualState.logoScale,
+                                scrollOffsetPx = aboutHeroVisualState.scrollOffsetPx,
+                                pageOffsetFraction = aboutPageOffsetFraction,
+                            )
+                        },
+                        modifier = Modifier.fillMaxSize().setupOutroTraceLayout("AboutHero"),
+                    )
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.imePadding().setupOutroTraceLayout("Pager"),
+                        beyondViewportPageCount = if (outroRunning) 0 else 1,
+                        verticalAlignment = Alignment.Top,
+                        overscrollEffect = pagerOverscrollEvents,
+                    ) { page ->
+                        SetupOutroTrace.mark("page $page ${mainTabs.getOrNull(page)} compose start")
+                        Box(Modifier.setupOutroTraceLayout("page $page"), propagateMinConstraints = true) {
+                            if (stage >= MAIN_STAGE_PAGE) when (mainTabs.getOrNull(page)) {
+                                MainTab.Home -> HomePage(
+                                    outerPadding = innerPadding,
+                                    availableUpdateVersion = availableUpdate?.displayVersion,
+                                    showHyperIslandEntry = hyperIslandEntryEnabled,
+                                    showAodLyricsEntry = aodLyricsEntryEnabled,
+                                    showDynamicIslandEntry = dynamicIslandEntryEnabled,
+                                    lyricHookSwitches = lyricHookSwitches,
+                                    enableHyperIsland = enableHyperIsland,
+                                    onHyperIslandToggle = toggleHyperIsland,
+                                    enableAodLyrics = enableAodLyrics,
+                                    onAodLyricsToggle = toggleAodLyrics,
+                                    onHyperIslandConfigClick = { navigator.navigate(Route.HookSettings) },
+                                    onHyperIslandTouchConfigClick = { navigator.navigate(Route.HyperIslandTouchSettings) },
+                                    onMediaCardConfigClick = { navigator.navigate(Route.MediaCardSettings) },
+                                    onLyricSettingsClick = { navigator.navigate(Route.LyricSettings) },
+                                    onDynamicIslandConfigClick = { navigator.navigate(Route.DynamicIslandNotification) },
+                                    onLockScreenAodConfigClick = { navigator.navigate(Route.LockScreenAodSettings) },
+                                    onClassicAodConfigClick = { navigator.navigate(Route.ClassicAodSettings) },
+                                    onRefreshClick = onOneTapRefreshClick,
+                                    onAppSettingsClick = { navigator.navigate(Route.Settings()) },
+                                    sectionLimit = stage - MAIN_STAGE_PAGE,
+                                )
+                                MainTab.AppleMusic -> AppleMusicOptimizationPage(
+                                    outerPadding = innerPadding,
+                                    showNavigationIcon = false,
+                                    // 主页仍在时左上角设置入口由主页提供，本页不重复显示；主页隐藏（本页即首页）时才显示。
+                                    embeddedInMainPage = !homePageVisible,
+                                    // 主页仍在时保持本页原有的标题 + 副标题，只有主页被隐藏（本页即首页）时才收起为应用名。
+                                    collapseTitleToAppName = !homePageVisible,
+                                    // 主页隐藏时本页即首页，顶栏右侧同样提供一键刷新入口。
+                                    showRefreshAction = !homePageVisible,
+                                    onRefreshClick = onOneTapRefreshClick,
+                                    onAppSettingsClick = { navigator.navigate(Route.Settings()) },
+                                )
+                                MainTab.About -> AboutPage(
+                                    outerPadding = innerPadding,
+                                    aboutAppVersion = aboutAppVersion,
+                                    availableUpdateVersion = availableUpdate?.displayVersion,
+                                    aboutDeviceName = aboutDeviceName,
+                                    aboutDeviceModel = aboutDeviceModel,
+                                    aboutOsVersion = aboutOsVersion,
+                                    aboutAndroidVersion = aboutAndroidVersion,
+                                    onHelpClick = { navigator.navigate(Route.Help) },
+                                    onLicensesClick = { navigator.navigate(Route.Licenses) },
+                                    onChangelogClick = { navigator.navigate(Route.Changelog) },
+                                    onContributorsClick = { navigator.navigate(Route.Contributors) },
+                                    onHeroStateChanged = { state ->
+                                        if (aboutHeroVisualState != state) {
+                                            aboutHeroVisualState = state
+                                        }
+                                    },
+                                )
+                                MainTab.Unsupported -> UnsupportedDevicePage(
+                                    onEnterAppSettings = { navigator.navigate(Route.Settings(scrollToFeatureSwitches = true)) },
+                                )
+                                null -> Unit
+                            }
+                        }
+                        SetupOutroTrace.mark("page $page compose end")
                     }
                 }
             }

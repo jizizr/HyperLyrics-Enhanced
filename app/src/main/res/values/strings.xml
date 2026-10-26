@@ -195,7 +195,7 @@
     <string name="lyric_mode_separated">对半分离滚动</string>
     <string name="title_lyric_mode">歌词模式</string>
     <string name="title_lyric_source">歌词源</string>
-    <string name="summary_lyric_source_apple_music_builtin">Apple Music用户可直接选用Lyricon源，无需额外模块，其余音乐App用户也推荐使用Lyricon源，内置插件更方便</string>
+    <string name="summary_lyric_source_apple_music_builtin">推荐选择 Lyricon 源，内置插件且无需额外模块，使用更方便</string>
     <string name="lyric_source_lyricon">Lyricon</string>
     <string name="lyric_source_superlyric">SuperLyric</string>
     <string name="lyric_source_lyricinfo">LyricInfo</string>
@@ -804,6 +804,7 @@
     <string name="summary_permission_post_notification">允许app发送通知以显示歌词</string>
     <string name="summary_add_whitelist">勾选需要显示歌词的音乐App</string>
     <string name="title_setup_complete">基础设置已完成</string>
+    <string name="setup_intro_skip_hint">再点一次加速动画播放</string>
     <string name="title_disclaimer">免责声明</string>
     <string name="title_disclaimer_notice">温馨提示</string>
     <string name="summary_disclaimer">Hook模式依赖系统级注入框架运行。\n\n启用后将修改系统界面的核心布局参数，极端情况下可能引发未知异常。\n\n请您务必知晓：因使用本模块导致的任何数据遗失或系统故障后果自负，开发者不承担任何直接或间接责任。</string>

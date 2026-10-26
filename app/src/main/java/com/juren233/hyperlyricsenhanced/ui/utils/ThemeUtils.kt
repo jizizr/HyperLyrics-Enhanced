@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -18,6 +20,9 @@ import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import top.yukonga.miuix.kmp.theme.ThemeController
+
+/** 应用当前的主题设置（配色模式与莫奈主题色），供需要按同一设置自行配色的界面读取。 */
+val LocalAppThemeController = staticCompositionLocalOf<ThemeController?> { null }
 
 object ThemeUtils {
 
@@ -101,8 +106,10 @@ object ThemeUtils {
             }
         }
 
-        MiuixTheme(controller = themeController) {
-            content()
+        CompositionLocalProvider(LocalAppThemeController provides themeController) {
+            MiuixTheme(controller = themeController) {
+                content()
+            }
         }
     }
 }

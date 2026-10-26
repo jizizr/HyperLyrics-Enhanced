@@ -8,11 +8,16 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="app_icon_red">#FFE60012</color>
+    <!-- 应用图标的品牌配色；不随 -v31 莫奈覆盖，界面不用莫奈取色时直接引用。 -->
+    <color name="logo_body">#FF15171A</color>
+    <color name="logo_detail">#FF5D6167</color>
+    <color name="logo_accent_start">#FF58D7FF</color>
+    <color name="logo_accent_end">#FFF26BEA</color>
     <color name="ic_launcher_background">#FFFAFAFB</color>
-    <color name="ic_launcher_foreground">#FF15171A</color>
+    <color name="ic_launcher_foreground">@color/logo_body</color>
     <color name="ic_launcher_foreground_mid">#FF0B0C0E</color>
     <color name="ic_launcher_foreground_end">#FF050607</color>
-    <color name="ic_launcher_detail">#FF5D6167</color>
-    <color name="ic_launcher_accent_start">#FF58D7FF</color>
-    <color name="ic_launcher_accent_end">#FFF26BEA</color>
+    <color name="ic_launcher_detail">@color/logo_detail</color>
+    <color name="ic_launcher_accent_start">@color/logo_accent_start</color>
+    <color name="ic_launcher_accent_end">@color/logo_accent_end</color>
 </resources>

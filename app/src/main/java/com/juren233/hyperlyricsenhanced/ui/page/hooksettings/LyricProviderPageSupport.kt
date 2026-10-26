@@ -180,6 +180,44 @@ internal fun rememberProviderDelayEditorState(delayKey: String): ProviderDelayEd
         )
     }
 
+/** 插件自动更新间隔的选项与当前选择：插件页与基础设置的歌词源步骤共用。 */
+internal class ProviderAutoUpdateChoice(
+    val items: List<String>,
+    val selectedIndex: Int,
+    val summary: String,
+    val select: (Int) -> Unit,
+)
+
+@Composable
+internal fun rememberProviderAutoUpdateChoice(): ProviderAutoUpdateChoice {
+    val context = LocalContext.current
+    var intervalHours by remember { mutableIntStateOf(ProviderAutoUpdatePolicy.intervalHours()) }
+    return ProviderAutoUpdateChoice(
+        items = listOf(
+            stringResource(R.string.provider_auto_update_interval_off),
+            stringResource(R.string.provider_auto_update_interval_1h),
+            stringResource(R.string.provider_auto_update_interval_2h),
+            stringResource(R.string.provider_auto_update_interval_6h),
+            stringResource(R.string.provider_auto_update_interval_12h),
+            stringResource(R.string.provider_auto_update_interval_24h),
+        ),
+        selectedIndex = ProviderAutoUpdatePolicy.CHOICE_HOURS.indexOf(intervalHours).coerceAtLeast(0),
+        summary = stringResource(
+            if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_OFF) {
+                R.string.provider_auto_update_summary_off
+            } else {
+                R.string.provider_auto_update_summary
+            },
+        ),
+        select = { index ->
+            intervalHours = ProviderAutoUpdatePolicy.CHOICE_HOURS[index]
+            ProviderAutoUpdatePolicy.putIntervalHours(intervalHours)
+            // 立即应用调度变化（如改为不开启时取消已排任务）。
+            ProviderAutoUpdateScheduler.onAppOpened(context)
+        },
+    )
+}
+
 internal fun LazyListScope.providerSections(
     officialUiState: OfficialProviderUiState,
     uiState: ProviderUiState,
@@ -197,16 +235,7 @@ internal fun LazyListScope.providerSections(
     }
 
     item(key = "official_auto_update") {
-        val context = LocalContext.current
-        var intervalHours by remember { mutableIntStateOf(ProviderAutoUpdatePolicy.intervalHours()) }
-        val intervalOptions = listOf(
-            stringResource(R.string.provider_auto_update_interval_off),
-            stringResource(R.string.provider_auto_update_interval_1h),
-            stringResource(R.string.provider_auto_update_interval_2h),
-            stringResource(R.string.provider_auto_update_interval_6h),
-            stringResource(R.string.provider_auto_update_interval_12h),
-            stringResource(R.string.provider_auto_update_interval_24h),
-        )
+        val autoUpdate = rememberProviderAutoUpdateChoice()
         Card(
             modifier = Modifier
                 .padding(horizontal = 12.dp)
@@ -215,22 +244,10 @@ internal fun LazyListScope.providerSections(
         ) {
             WindowDropdownPreference(
                 title = stringResource(R.string.provider_auto_update_title),
-                summary = stringResource(
-                    if (intervalHours == ProviderAutoUpdatePolicy.INTERVAL_OFF) {
-                        R.string.provider_auto_update_summary_off
-                    } else {
-                        R.string.provider_auto_update_summary
-                    },
-                ),
-                items = intervalOptions,
-                selectedIndex = ProviderAutoUpdatePolicy.CHOICE_HOURS.indexOf(intervalHours)
-                    .coerceAtLeast(0),
-                onSelectedIndexChange = { index ->
-                    intervalHours = ProviderAutoUpdatePolicy.CHOICE_HOURS[index]
-                    ProviderAutoUpdatePolicy.putIntervalHours(intervalHours)
-                    // 立即应用调度变化（如改为不开启时取消已排任务）。
-                    ProviderAutoUpdateScheduler.onAppOpened(context)
-                },
+                summary = autoUpdate.summary,
+                items = autoUpdate.items,
+                selectedIndex = autoUpdate.selectedIndex,
+                onSelectedIndexChange = autoUpdate.select,
             )
         }
     }

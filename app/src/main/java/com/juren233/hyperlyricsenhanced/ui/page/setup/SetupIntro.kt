@@ -9,6 +9,8 @@ package com.juren233.hyperlyricsenhanced.ui.page.setup
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -16,10 +18,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -63,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.juren233.hyperlyricsenhanced.R
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.PI
 import kotlin.math.abs
@@ -96,16 +104,19 @@ private object Timeline {
     const val CRISP = 5.31f
     const val EXIT = 6.05f
     const val END = EXIT + 1.1f
+
+    /** 第 [order] 句飞到岛上的时刻：岛从这一刻开始为它回弹，歌词在这次回弹内融入消失。 */
+    fun arrival(order: Int): Float = SUCK + order * SUCK_STAGGER + SUCK_DURATION
 }
 
-/** 原创歌词，第 4 句是产品名（运行时取 app_name），其余句不随语言变化。 */
+/** 原创英文歌词（押韵 AABBBA，第 3、5 句押产品名的 -anced），第 4 句是产品名（运行时取 app_name），其余句不随语言变化。 */
 private val INTRO_LYRICS = listOf(
-    "城市在晚风里慢慢降速",
-    "耳机里的光一闪一闪",
-    "Every word finds its place",
+    "The city hums a quiet tune",
+    "Glowing like a silver moon",
+    "Every lyric softly danced",
     null,
-    "把每一句都唱给你听",
-    "Until the night runs out",
+    "Kept the night entranced",
+    "As the dawn breaks through",
 )
 private const val HERO_LINE = 3
 
@@ -178,15 +189,18 @@ private class IntroGeometry(
     private val musicWidth = SetupStatusIsland.MusicWidth.value * dp
     private val musicHeight = SetupStatusIsland.MusicHeight.value * dp
 
+    /** 歌词飞到岛时缩到的宽度：比常驻岛宽略窄，看得清是哪一句在进岛，又刚好装进岛里。 */
+    val lyricArriveWidth = restWidth * 0.8f
+
     /**
-     * 状态栏超级岛的大小：从常驻尺寸随吸入量长到音乐态尺寸（[SetupStatusIsland]），滴落后收回。
+     * 状态栏超级岛的大小：从常驻尺寸随吸入量长到音乐态尺寸（[SetupStatusIsland]），滴落时随液滴缩回。
      * 每吸入一句只平滑地鼓一下再回落（不振荡），相邻两句的鼓动互不重叠。
      */
     fun island(t: Float): Rect {
         var bump = 0f
         var fed = 0f
         SUCK_ORDER.indices.forEach { order ->
-            val arrived = Timeline.SUCK + order * Timeline.SUCK_STAGGER + Timeline.SUCK_DURATION
+            val arrived = Timeline.arrival(order)
             val elapsed = t - arrived
             if (elapsed > 0f && elapsed < Timeline.ARRIVE_PULSE) {
                 bump = sin(PI.toFloat() * elapsed / Timeline.ARRIVE_PULSE) * 0.09f
@@ -194,17 +208,33 @@ private class IntroGeometry(
             // 每汇入一句只在这次鼓动内长大一级，两句之间尺寸不变。
             fed += motionTween(t, arrived, Timeline.ARRIVE_PULSE) / SUCK_ORDER.size
         }
-        val grow = motionSpring(t, 0.2f, 0.6f, 420f) * (1f - motionTween(t, Timeline.FALL + 0.2f, 0.45f))
-        val w = lerp(restWidth, musicWidth, fed) * grow * (1f + bump)
-        val h = lerp(restHeight, musicHeight, fed) * grow * (1f + bump * 0.5f)
-        return Rect(Offset(centerX - w / 2f, islandY - h / 2f), Size(w, h))
+        // 像水滴一样收回：液滴鼓出时岛高度不变、两侧收成圆珠，并被液滴往下拉一点；
+        // 坠落时圆珠沿液滴同一条坠落曲线缩没，被液滴带走。
+        val bulge = dropBulge(t)
+        val fall = dropFall(t)
+        val grow = motionSpring(t, 0.2f, 0.6f, 420f)
+        val size = SetupStatusIsland.retract(
+            Size(
+                lerp(restWidth, musicWidth, fed) * grow * (1f + bump),
+                lerp(restHeight, musicHeight, fed) * grow * (1f + bump * 0.5f),
+            ),
+            pinch = bulge,
+            vanish = fall,
+        )
+        val sag = 3f * dp * bulge * (1f - fall)
+        return Rect(Offset(centerX - size.width / 2f, islandY + sag - size.height / 2f), size)
     }
+
+    private fun dropBulge(t: Float): Float = motionTween(t, Timeline.BULGE, 0.3f)
+
+    private fun dropFall(t: Float): Float =
+        MotionEaseIn.transform(clamp01((t - Timeline.FALL) / (Timeline.LAND - Timeline.FALL)))
 
     /** 液滴：从岛下鼓出 → 拉丝坠落 → 落地回弹；返回中心与两个半径。 */
     fun drop(t: Float): Pair<Offset, Size> {
         val radius = 16f * dp
-        val bulge = motionTween(t, Timeline.BULGE, 0.3f)
-        val fall = MotionEaseIn.transform(clamp01((t - Timeline.FALL) / (Timeline.LAND - Timeline.FALL)))
+        val bulge = dropBulge(t)
+        val fall = dropFall(t)
         val y = lerp(lerp(islandY, islandY + 22f * dp, bulge), centerY, fall)
         var rx = radius * bulge
         var ry = radius * bulge * (1f + 0.35f * fall * (1f - fall) * 4f)
@@ -227,11 +257,18 @@ private class IntroGeometry(
         return Rect(Offset(centerX - w / 2f, centerY - h / 2f), Size(w, h))
     }
 
-    /** 某句歌词（非产品名）汇入超级岛的进度。 */
+    /** 某句歌词（非产品名）飞向超级岛的匀速进度，1 时正好到岛上。 */
     fun suck(t: Float, line: Int): Float {
         val order = SUCK_ORDER.indexOf(line)
         if (order < 0) return 0f
-        return clamp01((t - (Timeline.SUCK + order * Timeline.SUCK_STAGGER)) / Timeline.SUCK_DURATION)
+        return clamp01((t - (Timeline.arrival(order) - Timeline.SUCK_DURATION)) / Timeline.SUCK_DURATION)
+    }
+
+    /** 某句歌词到岛后融入岛内的进度，与岛为它回弹的那一下同步。 */
+    fun merge(t: Float, line: Int): Float {
+        val order = SUCK_ORDER.indexOf(line)
+        if (order < 0) return 0f
+        return clamp01((t - Timeline.arrival(order)) / Timeline.ARRIVE_PULSE)
     }
 }
 
@@ -239,11 +276,11 @@ private class IntroGeometry(
  * 首次启动动画（歌词汇流 × 液态融合）：
  * 1. 状态栏中央长出带细边框的超级岛，左侧封面、右侧音频律动；
  * 2. 原创歌词以 Apple Music 的样式依次上滚：左对齐大字，当前句清晰明亮，其余句压暗并按距离模糊；
- * 3. 唱到产品名这句时逐字演唱（品牌渐变、唱到的字轻轻上浮），同时其余歌词缩成一粒、一句接一句汇入超级岛；
- * 4. 产品名落到下方成为标题，岛拉丝滴下一颗液滴，落地回弹后直接漫开成图标，封面、歌曲信息与歌词胶囊随即弹出；
+ * 3. 唱到产品名这句时逐字演唱（品牌渐变、唱到的字轻轻上浮），同时其余歌词匀速边飞边缩到岛宽、一句接一句汇入超级岛，每句到岛后岛回弹一次；
+ * 4. 产品名落到下方成为标题，岛高度不变地收成圆珠，拉丝滴下一颗液滴并随之滴走，落地回弹后直接漫开成图标，封面、歌曲信息与歌词胶囊随即弹出；
  * 5. 图标飞入引导页顶栏 [target] 的位置，细边框褪去，引导内容浮现。
  *
- * 点按任意位置快进到结尾。[reveal] 由本动画驱动到 1，引导内容据此淡入；
+ * 第一次点按在底部显示“再点一次加速”的提示，再点一次才快进到结尾。[reveal] 由本动画驱动到 1，引导内容据此淡入；
  * [onReveal] 在图标开始飞向顶栏时回调，[onFinished] 在交接完成后回调。
  */
 @Composable
@@ -265,6 +302,13 @@ internal fun SetupIntro(
 
     var time by remember { mutableFloatStateOf(0f) }
     var skipping by remember { mutableStateOf(false) }
+    var hinted by remember { mutableStateOf(false) }
+    val showHint by remember { derivedStateOf { hinted && !skipping && time < Timeline.EXIT } }
+    val hintAlpha by animateFloatAsState(
+        targetValue = if (showHint) 1f else 0f,
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        label = "setup_intro_skip_hint",
+    )
     var ownCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var targetRect by remember { mutableStateOf<Rect?>(null) }
 
@@ -330,10 +374,10 @@ internal fun SetupIntro(
             .onPlaced { ownCoordinates = it }
             .semantics { contentDescription = appName }
             .pointerInput(Unit) {
-                // 动画期间吞掉全部触摸，避免误触到尚未显示的引导内容；点按即快进。
+                // 动画期间吞掉全部触摸，避免误触到尚未显示的引导内容；第一次点按只显示提示，再点一次才快进。
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false).consume()
-                    skipping = true
+                    if (hinted) skipping = true else hinted = true
                     do {
                         val event = awaitPointerEvent()
                         event.changes.forEach { it.consume() }
@@ -398,7 +442,7 @@ internal fun SetupIntro(
             }
         }
 
-        // 其余歌词：每句一个图层，便于按距离模糊；汇入超级岛时先缩成一粒再加速飞入。
+        // 其余歌词：每句一个图层，便于按距离模糊；汇入超级岛时边飞边缩到岛宽，进岛时才融入消失。
         val blurMargin = with(density) { 10.dp.toPx() }
         INTRO_LYRICS.indices.filter { it != HERO_LINE }.forEach { line ->
             val layout = lyricLayouts[line]
@@ -475,6 +519,17 @@ internal fun SetupIntro(
                 exitValue = introExit(time),
             )
         }
+
+        Text(
+            text = stringResource(R.string.setup_intro_skip_hint),
+            fontSize = 13.sp,
+            color = MiuixTheme.colorScheme.onSurfaceSecondary,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 24.dp)
+                .graphicsLayer { alpha = hintAlpha },
+        )
     }
 }
 
@@ -502,14 +557,16 @@ private fun lyricLineTransform(
     var scale = 1f
     val raw = geometry.suck(t, line)
     if (raw > 0f) {
-        val path = MotionEaseIn.transform(raw)
-        val shrink = FastOutSlowInEasing.transform(clamp01(raw * 2.2f))
+        // 匀速飞行，一路只缩到岛宽，并变清晰、不透明，看得见是哪一句在进岛；
+        // 到岛上之后才在岛这一下回弹里融入消失。
+        val merge = geometry.merge(t, line)
+        val arriveScale = minOf(1f, geometry.lyricArriveWidth / width)
         val swing = if (line % 2 == 1) 16f else -16f
-        centerX = lerp(centerX, geometry.centerX, path) + sin(path * PI.toFloat()) * swing * geometry.dp
-        y = lerp(centerY, geometry.islandY, path)
-        scale = lerp(1f, 0.04f, shrink)
-        alpha = if (raw >= 1f) 0f else lerp(alpha, 0.7f, shrink)
-        blur *= 1f - shrink
+        centerX = lerp(centerX, geometry.centerX, raw) + sin(raw * PI.toFloat()) * swing * geometry.dp
+        y = lerp(centerY, geometry.islandY, raw)
+        scale = lerp(1f, arriveScale, raw) * lerp(1f, 0.6f, merge)
+        alpha = lerp(lerp(alpha, 1f, raw), 0f, merge)
+        blur *= 1f - raw
     }
     return LyricTransform(
         x = centerX - width / 2f - margin,
@@ -546,24 +603,48 @@ private fun IntroLyricLine(
     )
 }
 
-/** 状态栏超级岛的音乐态：左侧封面、右侧音频律动，岛收回时随之缩小；[fade] 控制整体显隐。 */
-internal fun DrawScope.drawIslandMusicState(island: Rect, t: Float, palette: IslandLogoPalette, fade: Float) {
-    val visible = clamp01((island.height / SetupStatusIsland.RestHeight.toPx() - 0.6f) / 0.4f) * fade
-    if (visible <= 0f || island.height <= 0f) return
+/**
+ * 状态栏超级岛的音乐态：左侧封面、右侧音频律动；岛长出时随高度显现，收回时随岛变短（两侧收向圆）淡出；
+ * [fade] 控制整体显隐。
+ *
+ * 给出 [coverFrom]（及其圆角 [coverFromRadius]）时，封面不随 [fade] 显现，而是从这块已经显示着的封面
+ * 按 [coverDock] 连续移到岛封面的位置：完成转场里图标的封面直接成为岛的封面，中间不消失。
+ */
+internal fun DrawScope.drawIslandMusicState(
+    island: Rect,
+    t: Float,
+    palette: IslandLogoPalette,
+    fade: Float,
+    coverFrom: Rect? = null,
+    coverFromRadius: Float = 0f,
+    coverDock: Float = 1f,
+) {
+    if (island.height <= 0f) return
+    // 长出：岛从无到有长高时显现（只用于 intro，完成转场的岛从顶栏小图标起飞，不能按高度判断）；
+    // 收回：两侧收向圆时淡出，图标与音乐态的长宽比都在显示范围内。
+    val growing = clamp01((island.height / SetupStatusIsland.RestHeight.toPx() - 0.6f) / 0.4f)
+    val retracting = clamp01((island.width / island.height - 1.5f) / 1.2f)
+    val visible = growing * retracting * fade
     val inset = 5.5.dp.toPx()
     val cover = island.height - inset * 2f
     // 左侧留得比上下宽一些，封面不贴着胶囊圆角。
     val coverLeft = 9.dp.toPx() * clamp01(island.height / SetupStatusIsland.RestHeight.toPx())
-    val coverRect = Rect(Offset(island.left + coverLeft, island.top + inset), Size(cover, cover))
-    scale(scale = visible, pivot = coverRect.center) {
-        drawRoundRect(
-            brush = Brush.linearGradient(listOf(palette.accentStart, palette.accentEnd), coverRect.bottomLeft, coverRect.topRight),
-            topLeft = coverRect.topLeft,
-            size = coverRect.size,
-            cornerRadius = CornerRadius(cover * 0.3f),
-            alpha = visible,
-        )
+    val islandCover = Rect(Offset(island.left + coverLeft, island.top + inset), Size(cover, cover))
+    val coverRect = if (coverFrom != null) lerpRect(coverFrom, islandCover, coverDock) else islandCover
+    val coverRadius = if (coverFrom != null) lerp(coverFromRadius, cover * 0.3f, coverDock) else cover * 0.3f
+    val coverVisible = if (coverFrom != null) retracting else visible
+    if (coverVisible > 0f) {
+        scale(scale = coverVisible, pivot = coverRect.center) {
+            drawRoundRect(
+                brush = Brush.linearGradient(listOf(palette.accentStart, palette.accentEnd), coverRect.bottomLeft, coverRect.topRight),
+                topLeft = coverRect.topLeft,
+                size = coverRect.size,
+                cornerRadius = CornerRadius(coverRadius),
+                alpha = coverVisible,
+            )
+        }
     }
+    if (visible <= 0f) return
     // 四根律动条，各自相位与节奏不同，起伏放缓到接近真实音乐律动；高度随岛身一起缩放。
     val barWidth = 1.8.dp.toPx()
     val barGap = 2.2.dp.toPx()

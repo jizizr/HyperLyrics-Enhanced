@@ -194,7 +194,7 @@
     <string name="lyric_mode_separated">Half-Split Scroll</string>
     <string name="title_lyric_mode">Lyrics Mode</string>
     <string name="title_lyric_source">Lyrics Source</string>
-    <string name="summary_lyric_source_apple_music_builtin">Apple Music uses Lyricon without another module. Lyricon is also recommended for other music apps because built-in plugins simplify setup.</string>
+    <string name="summary_lyric_source_apple_music_builtin">Lyricon is recommended: built-in plugins, no extra module, easier to use.</string>
     <string name="lyric_source_lyricon">Lyricon</string>
     <string name="lyric_source_superlyric">SuperLyric</string>
     <string name="lyric_source_lyricinfo">LyricInfo</string>
@@ -801,6 +801,7 @@
     <string name="summary_permission_post_notification">Allow the app to post lyric notifications</string>
     <string name="summary_add_whitelist">Select music apps to display lyrics</string>
     <string name="title_setup_complete">Setup Complete</string>
+    <string name="setup_intro_skip_hint">Tap again to speed up the animation</string>
     <string name="title_disclaimer">Disclaimer</string>
     <string name="title_disclaimer_notice">Notice</string>
     <string name="summary_disclaimer">Hook mode relies on a system-level injection framework.\n\nEnabling it modifies SystemUI\'s core layout parameters and may cause unexpected issues in extreme cases.\n\nThe developer is not responsible, directly or indirectly, for any data loss or system failures caused by this module.</string>

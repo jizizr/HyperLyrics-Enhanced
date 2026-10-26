@@ -8,7 +8,12 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -89,6 +94,7 @@ import com.juren233.hyperlyricsenhanced.root.RootApplication
 import com.juren233.hyperlyricsenhanced.ui.component.EnhancedVersionNotice
 import com.juren233.hyperlyricsenhanced.ui.component.ProComponent
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.localizeProviderError
+import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.rememberProviderAutoUpdateChoice
 import com.juren233.hyperlyricsenhanced.ui.page.hooksettings.rememberProviderErrorTexts
 import com.juren233.hyperlyricsenhanced.ui.page.setup.ISLAND_LOGO_ASPECT
 import com.juren233.hyperlyricsenhanced.ui.page.setup.LocalSetupOutro
@@ -114,6 +120,12 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Scaffold
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBar
+import com.juren233.hyperlyricsenhanced.ui.utils.BlurredBottomBar
+import com.juren233.hyperlyricsenhanced.ui.utils.rememberBlurBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
@@ -183,7 +195,10 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
     }
 
     val completeSetup = {
-        prefs.edit { putBoolean(UIConstants.KEY_SETUP_COMPLETED, true) }
+        prefs.edit {
+            putBoolean(UIConstants.KEY_SETUP_COMPLETED, true)
+            putInt(UIConstants.KEY_SETUP_FLOW_VERSION, UIConstants.CURRENT_SETUP_FLOW_VERSION)
+        }
         onNavigateToMain()
     }
 
@@ -248,6 +263,10 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
         }
     }
 
+    val backdrop = rememberBlurBackdrop()
+    val blurActive = backdrop != null
+    val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -257,107 +276,118 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
             modifier = Modifier.graphicsLayer { alpha = reveal.value },
             snackbarHost = { SnackbarHost(state = snackbarHostState) },
             topBar = {
-                SetupHeader(
-                    pageCount = pagerState.pageCount,
-                    currentPage = pagerState.targetPage,
-                    logoVisible = introFinished && !finishing,
-                    onLogoPlaced = { headerLogoCoordinates = it },
-                    indicatorAlpha = { indicatorExit },
-                )
+                BlurredBar(backdrop, blurActive) {
+                    Box(Modifier.background(barColor)) {
+                        SetupHeader(
+                            pageCount = pagerState.pageCount,
+                            currentPage = pagerState.targetPage,
+                            logoVisible = introFinished && !finishing,
+                            onLogoPlaced = { headerLogoCoordinates = it },
+                            indicatorAlpha = { indicatorExit },
+                        )
+                    }
+                }
             },
             bottomBar = {
                 val isLastPage = pagerState.currentPage == pagerState.pageCount - 1
                 Box(Modifier.graphicsLayer { alpha = bottomBarExit }) {
-                    SetupBottomBar(
-                        showBack = pagerState.targetPage > 0,
-                        nextText = if (isLastPage) stringResource(R.string.confirm) else stringResource(R.string.next),
-                        nextEnabled = !onPermissionPage || permissionPageCompleted,
-                        onBack = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                            }
-                        },
-                        onNext = {
-                            if (isLastPage) {
-                                onFinish()
-                            } else if (pagerState.currentPage == 0 &&
-                                workMode == SETUP_MODE_MI_HYPER_ISLAND &&
-                                RootApplication.xposedService == null
-                            ) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(
-                                        message = msgXposedNotActive,
-                                        duration = SnackbarDuration.Custom(2000L)
-                                    )
-                                }
-                            } else {
-                                if (pagerState.currentPage == 0) {
-                                    // 模式 0 默认处于选中态，用户可能未点按卡片直接下一步：
-                                    // 前进时统一持久化选择并落定入口联动，保证“选择米系超级岛歌词”一定生效。
-                                    prefs.edit { putInt(UIConstants.KEY_WORK_MODE, workMode) }
-                                    applySetupModeEntrySideEffects(prefs, workMode)
-                                }
-                                scope.launch {
-                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                                }
-                            }
-                        },
-                    )
+                    BlurredBottomBar(backdrop, blurActive) {
+                        Box(Modifier.background(barColor)) {
+                            SetupBottomBar(
+                                showBack = pagerState.targetPage > 0,
+                                nextText = if (isLastPage) stringResource(R.string.confirm) else stringResource(R.string.next),
+                                nextEnabled = !onPermissionPage || permissionPageCompleted,
+                                onBack = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                                    }
+                                },
+                                onNext = {
+                                    if (isLastPage) {
+                                        onFinish()
+                                    } else if (pagerState.currentPage == 0 &&
+                                        workMode == SETUP_MODE_MI_HYPER_ISLAND &&
+                                        RootApplication.xposedService == null
+                                    ) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                message = msgXposedNotActive,
+                                                duration = SnackbarDuration.Custom(2000L)
+                                            )
+                                        }
+                                    } else {
+                                        if (pagerState.currentPage == 0) {
+                                            // 模式 0 默认处于选中态，用户可能未点按卡片直接下一步：
+                                            // 前进时统一持久化选择并落定入口联动，保证“选择米系超级岛歌词”一定生效。
+                                            prefs.edit { putInt(UIConstants.KEY_WORK_MODE, workMode) }
+                                            applySetupModeEntrySideEffects(prefs, workMode)
+                                        }
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         ) { padding ->
+            // 内容铺满到两栏下面，由各页把栏高留作内边距，滚动时内容从栏下经过，渐进模糊才有内容可模糊。
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
                 userScrollEnabled = false
             ) { page ->
-                SetupPageScope(
-                    active = contentRevealed && pagerState.targetPage == page,
-                    exiting = finishing && pagerState.targetPage == page,
-                ) {
-                    when (page) {
-                        0 -> ModeSelectionPage(
-                            selectedMode = workMode,
-                            onModeSelected = { mode ->
-                                workMode = mode
-                                prefs.edit { putInt(UIConstants.KEY_WORK_MODE, mode) }
-                                applySetupModeEntrySideEffects(prefs, mode)
+                CompositionLocalProvider(LocalSetupBarPadding provides padding) {
+                    SetupPageScope(
+                        active = contentRevealed && pagerState.targetPage == page,
+                        exiting = finishing && pagerState.targetPage == page,
+                    ) {
+                        when (page) {
+                            0 -> ModeSelectionPage(
+                                selectedMode = workMode,
+                                onModeSelected = { mode ->
+                                    workMode = mode
+                                    prefs.edit { putInt(UIConstants.KEY_WORK_MODE, mode) }
+                                    applySetupModeEntrySideEffects(prefs, mode)
+                                }
+                            )
+                            1 -> when (workMode) {
+                                SETUP_MODE_MI_HYPER_ISLAND -> DisclaimerPage()
+                                SETUP_MODE_DYNAMIC_ISLAND -> PermissionPage(
+                                    isNotificationGranted = isNotificationListenerGranted,
+                                    isPostNotificationGranted = isPostNotificationGranted,
+                                    isAppListGranted = isAppListGranted,
+                                    onRequestAppListPermission = requestAppListPermission,
+                                )
+                                else -> AppListPermissionPage(
+                                    isAppListGranted = isAppListGranted,
+                                    isPostNotificationGranted = isPostNotificationGranted,
+                                    onRequestAppListPermission = requestAppListPermission,
+                                )
                             }
-                        )
-                        1 -> when (workMode) {
-                            SETUP_MODE_MI_HYPER_ISLAND -> DisclaimerPage()
-                            SETUP_MODE_DYNAMIC_ISLAND -> PermissionPage(
-                                isNotificationGranted = isNotificationListenerGranted,
-                                isPostNotificationGranted = isPostNotificationGranted,
-                                isAppListGranted = isAppListGranted,
-                                onRequestAppListPermission = requestAppListPermission,
-                            )
-                            else -> AppListPermissionPage(
-                                isAppListGranted = isAppListGranted,
-                                isPostNotificationGranted = isPostNotificationGranted,
-                                onRequestAppListPermission = requestAppListPermission,
-                            )
-                        }
-                        2 -> when (workMode) {
-                            SETUP_MODE_MI_HYPER_ISLAND -> AppListPermissionPage(
-                                isAppListGranted = isAppListGranted,
-                                isPostNotificationGranted = isPostNotificationGranted,
-                                onRequestAppListPermission = requestAppListPermission,
-                            )
-                            SETUP_MODE_DYNAMIC_ISLAND -> WhitelistPage()
-                            else -> CompletionPage(appleMusicOnly = true)
-                        }
-                        3 -> if (workMode == SETUP_MODE_MI_HYPER_ISLAND) LyricSourceSelectionPage(
-                            selectedSource = selectedSource,
-                            snackbarHostState = snackbarHostState,
-                            onSourceSelected = { source ->
-                                selectedSource = source
-                                prefs.edit { putString(RootConstants.KEY_HOOK_LYRIC_SOURCE, source) }
+                            2 -> when (workMode) {
+                                SETUP_MODE_MI_HYPER_ISLAND -> AppListPermissionPage(
+                                    isAppListGranted = isAppListGranted,
+                                    isPostNotificationGranted = isPostNotificationGranted,
+                                    onRequestAppListPermission = requestAppListPermission,
+                                )
+                                SETUP_MODE_DYNAMIC_ISLAND -> WhitelistPage()
+                                else -> CompletionPage(appleMusicOnly = true)
                             }
-                        ) else CompletionPage()
-                        else -> CompletionPage()
+                            3 -> if (workMode == SETUP_MODE_MI_HYPER_ISLAND) LyricSourceSelectionPage(
+                                selectedSource = selectedSource,
+                                snackbarHostState = snackbarHostState,
+                                onSourceSelected = { source ->
+                                    selectedSource = source
+                                    prefs.edit { putString(RootConstants.KEY_HOOK_LYRIC_SOURCE, source) }
+                                }
+                            ) else CompletionPage()
+                            else -> CompletionPage()
+                        }
                     }
                 }
             }
@@ -457,6 +487,9 @@ private fun SetupBottomBar(
     }
 }
 
+/** 顶栏与底栏的高度：内容铺到两栏下面，各页把它留作内边距。 */
+private val LocalSetupBarPadding = staticCompositionLocalOf { PaddingValues() }
+
 /** 引导各页的统一骨架：大标题在上，内容依次浮现。 */
 @Composable
 private fun SetupPageColumn(
@@ -464,9 +497,15 @@ private fun SetupPageColumn(
     summary: String? = null,
     content: LazyListScope.() -> Unit,
 ) {
+    val bars = LocalSetupBarPadding.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(
+            start = 12.dp,
+            end = 12.dp,
+            top = bars.calculateTopPadding() + 4.dp,
+            bottom = bars.calculateBottomPadding() + 24.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "setup_page_title") {
@@ -795,6 +834,7 @@ private fun WhitelistPage() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(LocalSetupBarPadding.current)
             .padding(horizontal = 12.dp)
             .padding(top = 4.dp, bottom = 12.dp)
     ) {
@@ -939,6 +979,21 @@ private fun LyricSourceSelectionPage(
                         onSourceSelected(sourceIds[index])
                     },
                 )
+                // Lyricon 源使用内置插件：在这里就能设好插件的自动更新间隔。
+                AnimatedVisibility(
+                    visible = selectedSource == "lyricon",
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+                ) {
+                    val autoUpdate = rememberProviderAutoUpdateChoice()
+                    OverlayDropdownPreference(
+                        title = stringResource(R.string.provider_auto_update_title),
+                        summary = autoUpdate.summary,
+                        items = autoUpdate.items,
+                        selectedIndex = autoUpdate.selectedIndex,
+                        onSelectedIndexChange = autoUpdate.select,
+                    )
+                }
             }
         }
         item(key = "setup_lyric_source_detail") {
@@ -1093,6 +1148,7 @@ private fun CompletionPage(appleMusicOnly: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(LocalSetupBarPadding.current)
             .padding(horizontal = 28.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center

@@ -41,6 +41,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 /** 宽屏最小宽度（dp），达到即按平板布局渲染，与 Material 规范的 medium 断点一致。 */
 private const val WIDE_SCREEN_MIN_WIDTH_DP = 600
 private val TOP_BAR_BLUR_FADE_HEIGHT = 16.dp
+private val BOTTOM_BAR_BLUR_FADE_HEIGHT = 16.dp
 
 fun Modifier.pageScrollModifiers(
     enableScrollEndHaptic: Boolean,
@@ -143,11 +144,7 @@ fun BlurredBar(
     content: @Composable () -> Unit,
 ) {
     val progressiveBlurEnabled = rememberProgressiveBlurEnabled()
-    val blurColors = BlurColors(
-        blendColors = listOf(
-            BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
-        ),
-    )
+    val blurColors = barBlurColors()
     val progressiveBlurActive = blurEnabled && backdrop != null && progressiveBlurEnabled
     Box(
         modifier = if (blurEnabled && backdrop != null) {
@@ -169,6 +166,57 @@ fun BlurredBar(
                     backdrop = backdrop,
                     shape = RectangleShape,
                     blurRadius = 25f,
+                    colors = blurColors,
+                )
+            }
+        } else {
+            Modifier
+        },
+    ) {
+        content()
+    }
+}
+
+/** 栏模糊的叠色：顶栏与底栏共用。 */
+@Composable
+private fun barBlurColors(): BlurColors = BlurColors(
+    blendColors = listOf(
+        BlendColorEntry(color = MiuixTheme.colorScheme.surface.copy(0.8f)),
+    ),
+)
+
+/**
+ * 底栏模糊：与 [BlurredBar] 对应，开启渐进模糊时从栏底向上渐隐，否则整栏均匀模糊；主页面导航栏与基础设置底栏共用。
+ * [content] 的背景由调用方决定（模糊生效时应透明）。
+ */
+@Composable
+fun BlurredBottomBar(
+    backdrop: LayerBackdrop?,
+    blurEnabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val progressiveBlurEnabled = rememberProgressiveBlurEnabled()
+    val blurColors = barBlurColors()
+    Box(
+        modifier = if (blurEnabled && backdrop != null) {
+            if (progressiveBlurEnabled) {
+                Modifier
+                    // 渐隐带不计入测量高度：渐变仍按「栏高 + 渐隐带」计算，栏内控件仍位于原来的坐标，
+                    // 页面内容不再被推下；溢出的渐隐带作为浮层盖在内容区底部。
+                    .blurFadeExtension(extension = BOTTOM_BAR_BLUR_FADE_HEIGHT, extendUp = true)
+                    .progressiveTextureBlur(
+                        backdrop = backdrop,
+                        shape = RectangleShape,
+                        blurRadius = 12f,
+                        gradient = ProgressiveBlur.Bottom.copy(startFraction = 0.5f),
+                        colors = blurColors,
+                    )
+                    .padding(top = BOTTOM_BAR_BLUR_FADE_HEIGHT)
+            } else {
+                Modifier.textureBlur(
+                    backdrop = backdrop,
+                    shape = RectangleShape,
+                    blurRadius = 12f,
                     colors = blurColors,
                 )
             }

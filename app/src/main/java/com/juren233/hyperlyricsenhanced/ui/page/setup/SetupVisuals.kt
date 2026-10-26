@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -51,11 +52,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import com.juren233.hyperlyricsenhanced.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
+import com.juren233.hyperlyricsenhanced.ui.utils.LocalAppThemeController
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
 import kotlin.math.hypot
 
 /** 启动图标前景胶囊的视口宽高（ic_launcher_foreground 中 18..494 × 180..332）。 */
@@ -73,13 +78,39 @@ internal class IslandLogoPalette(
     val outline: Color,
 )
 
+private val MONET_SCHEME_MODES = setOf(
+    ColorSchemeMode.MonetSystem,
+    ColorSchemeMode.MonetLight,
+    ColorSchemeMode.MonetDark,
+)
+
+/**
+ * 首启动画与完成转场里图标 / 超级岛的配色，跟随应用自己的配色设置：
+ * 莫奈取色时取当前莫奈配色（含所选主题色）的深色方案，与界面一致；否则用应用图标的品牌配色。
+ */
 @Composable
 internal fun rememberIslandLogoPalette(): IslandLogoPalette {
-    // 超级岛胶囊在浅色与深色模式下都是深色，与系统超级岛一致；取深色模式下的图标配色。
-    val body = colorResource(android.R.color.system_accent1_800)
-    val detail = colorResource(android.R.color.system_accent1_200)
-    val accentStart = colorResource(R.color.ic_launcher_accent_start)
-    val accentEnd = colorResource(R.color.ic_launcher_accent_end)
+    val theme = LocalAppThemeController.current
+    val monet = theme?.colorSchemeMode in MONET_SCHEME_MODES
+    val body: Color
+    val detail: Color
+    val accentStart: Color
+    val accentEnd: Color
+    if (monet) {
+        // 超级岛胶囊在浅色与深色模式下都是深色，与系统超级岛一致；取深色方案的色调 20 / 80 / 90。
+        val darkMonet = remember(theme?.keyColor) {
+            ThemeController(colorSchemeMode = ColorSchemeMode.MonetDark, keyColor = theme?.keyColor)
+        }.currentColors()
+        body = darkMonet.onPrimary
+        detail = darkMonet.primary
+        accentStart = darkMonet.primary
+        accentEnd = darkMonet.onTertiaryContainer
+    } else {
+        body = colorResource(R.color.logo_body)
+        detail = colorResource(R.color.logo_detail)
+        accentStart = colorResource(R.color.logo_accent_start)
+        accentEnd = colorResource(R.color.logo_accent_end)
+    }
     val dark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     return remember(body, detail, accentStart, accentEnd, dark) {
         IslandLogoPalette(
@@ -376,6 +407,16 @@ internal object SetupStatusIsland {
     val MusicWidth = 118.dp
     val MusicHeight = 32.dp
 
+    /**
+     * 岛收回时的尺寸（intro 滴落与 outro 收起共用）：先高度不变、两侧向中间收成圆（[pinch] 0→1），
+     * 再整体缩小消失（[vanish] 0→1）。
+     */
+    fun retract(size: Size, pinch: Float, vanish: Float): Size {
+        val width = lerp(size.width, minOf(size.width, size.height), pinch)
+        val remain = 1f - vanish
+        return Size(width * remain, size.height * remain)
+    }
+
     /** 岛中心的纵坐标（像素）。 */
     fun centerY(statusBarTop: Int, density: Density): Float =
         with(density) { maxOf(statusBarTop / 2f, 19.dp.toPx()) }
@@ -390,6 +431,15 @@ private const val SETUP_STAGGER_MAX_ORDER = 5
 /** 每一项浮现的时长与上浮距离；完成转场里目标页面的浮现也用这一组。 */
 internal const val SETUP_STAGGER_DURATION_MILLIS = 460
 internal val SetupStaggerOffset = 22.dp
+
+/** 逐项浮现一项的曲线：引导页内容、完成转场显露的页面及其中逐项组合出的列表项共用。 */
+internal val SetupStaggerSpec = tween<Float>(durationMillis = SETUP_STAGGER_DURATION_MILLIS, easing = FastOutSlowInEasing)
+
+/** 逐项浮现中一项在进度 [value] 时的样子：0 时透明并下沉 [SetupStaggerOffset]，1 时就位。 */
+internal fun GraphicsLayerScope.setupRevealLayer(value: Float) {
+    alpha = value
+    translationY = (1f - value) * SetupStaggerOffset.toPx()
+}
 
 /** 依次浮现最长的一项（第 5 项）播完所需的时间。 */
 private const val SETUP_STAGGER_SETTLE_MILLIS = SETUP_STAGGER_MAX_ORDER * 55L + SETUP_STAGGER_DURATION_MILLIS
@@ -429,14 +479,18 @@ internal fun Modifier.setupStagger(order: Int): Modifier {
             progress.animateTo(0f, tween(durationMillis = SETUP_EXIT_DURATION_MILLIS, easing = FastOutSlowInEasing))
         } else if (active) {
             delay(order * 55L)
-            progress.animateTo(1f, tween(durationMillis = SETUP_STAGGER_DURATION_MILLIS, easing = FastOutSlowInEasing))
+            progress.animateTo(1f, SetupStaggerSpec)
         }
     }
     return graphicsLayer {
         val value = progress.value
-        alpha = value
         // 浮现时自下而上，退场时继续向上离开。
-        translationY = if (exiting) -(1f - value) * 12.dp.toPx() else (1f - value) * SetupStaggerOffset.toPx()
+        if (exiting) {
+            alpha = value
+            translationY = -(1f - value) * 12.dp.toPx()
+        } else {
+            setupRevealLayer(value)
+        }
     }
 }
 

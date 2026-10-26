@@ -52,6 +52,7 @@ fun HomePage(
     onClassicAodConfigClick: () -> Unit,
     onRefreshClick: () -> Unit,
     onAppSettingsClick: () -> Unit,
+    sectionLimit: Int = Int.MAX_VALUE,
 ) {
     val backdrop = rememberBlurBackdrop()
     val blurActive = backdrop != null
@@ -120,6 +121,7 @@ fun HomePage(
                     onDynamicIslandConfigClick = onDynamicIslandConfigClick,
                     onLockScreenAodConfigClick = onLockScreenAodConfigClick,
                     onClassicAodConfigClick = onClassicAodConfigClick,
+                    sectionLimit = sectionLimit,
                 )
             }
         }

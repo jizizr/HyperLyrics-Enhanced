@@ -23,13 +23,17 @@ import top.yukonga.miuix.kmp.nav.transition.NavSwipeDirection
 import top.yukonga.miuix.kmp.nav.transition.NavTransition
 import kotlin.reflect.KClass
 import com.juren233.hyperlyricsenhanced.common.UIConstants
+import com.juren233.hyperlyricsenhanced.ui.page.MAIN_PAGE_OUTRO_STAGES
+import com.juren233.hyperlyricsenhanced.ui.page.MAIN_STAGE_SHELL
 import com.juren233.hyperlyricsenhanced.ui.page.MainPage
 import com.juren233.hyperlyricsenhanced.ui.page.SetupPage
 import com.juren233.hyperlyricsenhanced.ui.page.setup.LocalSetupOutro
 import com.juren233.hyperlyricsenhanced.ui.page.setup.SetupOutroAwareTransition
 import com.juren233.hyperlyricsenhanced.ui.page.setup.SetupOutroHost
 import com.juren233.hyperlyricsenhanced.ui.page.setup.rememberSetupOutroController
+import com.juren233.hyperlyricsenhanced.ui.page.setup.rememberSetupOutroStage
 import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroDestination
+import com.juren233.hyperlyricsenhanced.ui.page.setup.setupOutroTraceLayout
 import com.juren233.hyperlyricsenhanced.ui.page.LicensesPage
 import com.juren233.hyperlyricsenhanced.ui.page.LogPage
 import com.juren233.hyperlyricsenhanced.ui.page.SettingsPage
@@ -132,9 +136,13 @@ fun AppNavigation(startRoute: Route) {
             appEntry<Route.SetupReview>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) {
                 SetupPage(onNavigateToMain = { navigator.popUpTo(Route.SetupReview, inclusive = true) })
             }
-            // 基础设置完成转场结束时，主页面与设置页以逐项浮现的样式显露。
+            // 基础设置完成转场结束时，主页面与设置页以逐项浮现的样式显露；主页面在转场中分帧组合，
+            // 切换页面的那一帧只建空白路由。
             appEntry<Route.Main>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) {
-                Box(Modifier.setupOutroDestination(setupOutro)) { MainPage() }
+                val stage = rememberSetupOutroStage(MAIN_PAGE_OUTRO_STAGES)
+                Box(Modifier.setupOutroDestination(setupOutro).setupOutroTraceLayout("MainRoute")) {
+                    if (stage >= MAIN_STAGE_SHELL) MainPage(outroStage = stage)
+                }
             }
 
             appEntry<Route.Settings>(swipeDismiss = swipeDismiss, transition = setupOutroTransition) { settings ->

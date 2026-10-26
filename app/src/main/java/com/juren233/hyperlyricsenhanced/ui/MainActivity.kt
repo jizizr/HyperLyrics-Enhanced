@@ -43,7 +43,8 @@ class MainActivity : ComponentActivity() {
         }
         window.setBackgroundDrawable(ColorDrawable(if (isDark) Color.BLACK else 0xFFF7F7F7.toInt()))
 
-        val setupCompleted = prefs.getBoolean(UIConstants.KEY_SETUP_COMPLETED, UIConstants.DEFAULT_SETUP_COMPLETED)
+        val setupCompleted = prefs.getBoolean(UIConstants.KEY_SETUP_COMPLETED, UIConstants.DEFAULT_SETUP_COMPLETED) &&
+            prefs.getInt(UIConstants.KEY_SETUP_FLOW_VERSION, 0) >= UIConstants.CURRENT_SETUP_FLOW_VERSION
         
         val excludeFromRecents = prefs.getBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, UIConstants.DEFAULT_EXCLUDE_FROM_RECENTS)
         if (excludeFromRecents) {
