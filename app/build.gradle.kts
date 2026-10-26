@@ -48,7 +48,7 @@ android {
         applicationId = "com.juren233.hyperlyricsenhanced"
         minSdk = 33
         targetSdk = 37
-        versionCode = 230077
+        versionCode = 230079
         versionName = ciVersionName ?: "8.3.0-canary"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -59,6 +59,9 @@ android {
     }
 
     androidResources {
+        // The app ships Chinese (default) and English strings only; library string tables for
+        // the other ~80 locales are dead weight in the uncompressed resources.arsc.
+        localeFilters += setOf("zh", "en")
         // The Apple Music baseline Pack is already a deflated zip (APK deflate saves ~0.3%),
         // so store it to avoid inflating ~1 MB on every Apple Music cold start.
         noCompress += "hlp"

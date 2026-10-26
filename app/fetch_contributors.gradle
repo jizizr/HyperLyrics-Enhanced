@@ -1,6 +1,13 @@
 import groovy.json.JsonSlurper
 
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
+
+// Contributor avatars render at 40dp (ContributorsPage), i.e. 120px on xxhdpi. GitHub does not
+// always honor the size query for redirected avatar URLs, so the same size also bounds the
+// stored bitmap to keep the APK from carrying full-resolution copies.
+def avatarPixelSize = 120
 
 def contributorFallback = [
     [login: "juren233", name: "Cavan", html_url: "https://github.com/juren233", avatar_url: "https://github.com/juren233.png"],
@@ -90,13 +97,29 @@ tasks.register("generateContributors") {
             if (avatarUrl) {
                 try {
                     def separator = avatarUrl.contains("?") ? "&" : "?"
-                    def avatarConnection = new URL("${avatarUrl}${separator}s=120").openConnection()
+                    def avatarConnection = new URL("${avatarUrl}${separator}s=${avatarPixelSize}").openConnection()
                     avatarConnection.setConnectTimeout(15_000)
                     avatarConnection.setReadTimeout(15_000)
                     avatarConnection.setRequestProperty("User-Agent", "HyperLyrics-Enhanced-Gradle")
                     def image = avatarConnection.inputStream.withCloseable { ImageIO.read(it) }
                     if (image == null) {
                         throw new GradleException("Unsupported avatar format for ${login}")
+                    }
+                    // Some avatars arrive as 16-bit PNGs at the right size; normalize those to 8-bit too.
+                    def needsRedraw = image.width > avatarPixelSize || image.height > avatarPixelSize ||
+                        image.colorModel.componentSize.any { it > 8 }
+                    if (needsRedraw) {
+                        def scaled = new BufferedImage(
+                            Math.min(image.width, avatarPixelSize),
+                            Math.min(image.height, avatarPixelSize),
+                            image.colorModel.hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB
+                        )
+                        def graphics = scaled.createGraphics()
+                        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                        graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                        graphics.drawImage(image, 0, 0, scaled.width, scaled.height, null)
+                        graphics.dispose()
+                        image = scaled
                     }
                     drawableFile.parentFile.mkdirs()
                     if (!ImageIO.write(image, "png", drawableFile)) {

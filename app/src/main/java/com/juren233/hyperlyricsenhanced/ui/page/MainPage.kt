@@ -153,7 +153,8 @@ internal const val MAIN_PAGE_OUTRO_STAGES = MAIN_STAGE_PAGE + HOME_SECTION_MAX +
  */
 @Composable
 fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
-    remember { SetupOutroTrace.mark("MainPage compose start") }
+    // 仅 debug 构建且完成转场计时中才输出：标出每次组合主页面的时刻。
+    SetupOutroTrace.mark("MainPage compose")
     SideEffect { SetupOutroTrace.mark("MainPage applied") }
     val stage = outroStage
     // 绑定服务、读取迁移说明等后台副作用等页面组合完再执行，不挤进分帧组合的帧里。

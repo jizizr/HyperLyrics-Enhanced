@@ -34,7 +34,12 @@ data class SessionMetadataSample(
     }
 }
 
-/** 不受车载歌词改写影响的独立身份来源。枚举顺序即优先级，越靠前越可信。 */
+/**
+ * 不受车载歌词改写影响的独立身份来源。枚举顺序即优先级，越靠前越可信。
+ *
+ * [LYRICS_SONG]（歌词源自带的歌名与歌手，来源是外部发布端或歌词数据）本身未必干净，
+ * 所以只有能与会话歌手串交叉验证时才被采用，见 [MediaSessionMetadataSanitizer.sanitize]。
+ */
 enum class AnchorSource { PROVIDER, LYRICS_SONG, NOTIFICATION }
 
 /**
@@ -152,6 +157,9 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
         val usableAnchors by lazy(LazyThreadSafetyMode.NONE) {
             anchorProvider()
                 .filter { !it.title.isNullOrBlank() }
+                // 歌词源的歌名歌手可能自己就被污染：只有歌名加歌手恰好拼成会话的歌手串（与顺序、
+                // 分隔符、名字里的连字符无关）才算独立证据；对不上就不采用，宁可留空也不填错。
+                .filter { it.source != AnchorSource.LYRICS_SONG || combinedExplains(rawArtist, it.title, it.artist) }
                 .sortedBy { it.source.ordinal }
         }
 

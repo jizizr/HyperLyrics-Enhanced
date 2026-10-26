@@ -146,7 +146,15 @@ class LyricInfoSource(private val context: Context) : LyricSource {
             runCatching { controller.playbackState }.getOrNull(),
         )
         logDiagnosis(raw)
-        val song = LyricInfoParser.parse(raw, track.title, track.artist)
+        // Song 的歌名歌手以 lyricInfo 自带的为准：它是独立于会话的来源，也会作为净化器的歌词歌曲锚点；
+        // 缺失时才退回会话文本，而会话被改写且无法恢复时 displayTitle/displayArtist 为空，
+        // 不能把歌词行或原始组合歌手串写进 Song。
+        val declared = LyricInfoParser.diagnose(raw)
+        val song = LyricInfoParser.parse(
+            raw,
+            declared?.songName?.takeIf(String::isNotBlank) ?: track.displayTitle,
+            declared?.artist?.takeIf(String::isNotBlank) ?: track.displayArtist,
+        )
         if (song?.lyrics.isNullOrEmpty()) return
 
         lastLyricHash = hash

@@ -11,6 +11,7 @@ import android.os.Looper
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.common.IslandMusicAppCatalog
+import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataAdapter
 import com.juren233.hyperlyricsenhanced.lyric.model.Song
 import com.juren233.hyperlyricsenhanced.lyric.model.RichLyricLine
 import com.juren233.hyperlyricsenhanced.lyric.source.LyricSink
@@ -557,6 +558,13 @@ class LocalTimelineDriver(
     }
 
     private fun handleTimelineContent(content: TimelineContent) {
+        // 歌词源自带的歌名歌手交给净化器当独立锚点；采用与否由净化器按会话歌手串交叉验证，
+        // 锚点身份键不受影响，展示信息在下一次轮询采样时刷新。
+        MediaSessionMetadataAdapter.offerLyricsSong(
+            content.track?.packageName,
+            content.song?.name,
+            content.song?.artist,
+        )
         val decision = TimelineContentPolicy.decide(activeSourceId, anchor.currentTrack, content)
         recordContentDecision(content, decision.name)
         when (decision) {

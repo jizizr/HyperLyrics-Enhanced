@@ -311,6 +311,123 @@ class PollutedTrackIdentityTest {
         )
     }
 
+    // LyricInfo：内容与锚点都由 buildTrackIdentity 从同一会话构建，内容只在 lyricInfo 变化时提交一次，严格匹配。
+    @Test
+    fun `lyricinfo strict content survives the kugou mutations that follow its submission`() {
+        val submitted = kugouStart
+        val laterAnchors = listOf(
+            kugouStart.copy(durationMs = 147_000L),
+            kugouStart.copy(durationMs = 147_000L, album = "I Love You So (Acoustic)"),
+            kugouStart.copy(
+                title = "Lyrics by：Charles Ekhaus",
+                artist = "The Walters-I Love You So (Acoustic)",
+                durationMs = 147_000L,
+                album = "I Love You So (Acoustic)",
+            ),
+            kugouStart.copy(
+                title = "",
+                artist = "The Walters-I Love You So (Acoustic)",
+                durationMs = 147_000L,
+                album = "I Love You So (Acoustic)",
+                polluted = true,
+            ),
+        )
+        val timelineContent = TimelineContent(
+            sourceId = "lyricinfo",
+            track = submitted,
+            song = null,
+            strictIdentity = true,
+        )
+
+        laterAnchors.forEach { anchor ->
+            assertEquals(
+                TimelineContentPolicy.Decision.APPLY,
+                TimelineContentPolicy.decide("lyricinfo", anchor, timelineContent),
+            )
+        }
+        // 没有编号时（修复前的行为）每一步都会被判为错曲。
+        val untokened = timelineContent.copy(track = submitted.copy(trackToken = null))
+        laterAnchors.forEach { anchor ->
+            assertEquals(
+                TimelineContentPolicy.Decision.DROP_WRONG_TRACK,
+                TimelineContentPolicy.decide("lyricinfo", anchor.copy(trackToken = null), untokened),
+            )
+        }
+    }
+
+    @Test
+    fun `lyricinfo strict content never applies to the next track`() {
+        val timelineContent = TimelineContent(
+            sourceId = "lyricinfo",
+            track = kugouStart,
+            song = null,
+            strictIdentity = true,
+        )
+        val next = kugouStart.copy(trackToken = "12")
+
+        assertEquals(
+            TimelineContentPolicy.Decision.DROP_WRONG_TRACK,
+            TimelineContentPolicy.decide("lyricinfo", next, timelineContent),
+        )
+    }
+
+    @Test
+    fun `strict match falls back to the composite key when either side has no token`() {
+        val remote = kugouStart.copy(trackToken = null)
+
+        assertTrue(remote.matches(remote.copy()))
+        assertFalse(kugouStart.matches(remote.copy(title = "Other")))
+        // 编号键需要已知时长与歌手或专辑，缺失时仍按组合键严格比较。
+        val noDuration = kugouStart.copy(durationMs = 0L)
+        assertFalse(noDuration.matches(noDuration.copy(title = "Other")))
+    }
+
+    @Test
+    fun `strict match still lets media id decide first`() {
+        val withId = kugouStart.copy(mediaId = "m1", trackToken = "11")
+
+        assertTrue(withId.matches(withId.copy(trackToken = "99", title = "x")))
+        assertFalse(withId.matches(withId.copy(mediaId = "m2")))
+    }
+
+    // SuperLyric：内容身份取自发布端自己的标题/歌手/专辑/时长，没有 mediaId 也没有编号，非严格匹配。
+    @Test
+    fun `superlyric content matches a polluted or unconfirmed kugou anchor by the publisher names`() {
+        val publisher = TrackIdentity(
+            packageName = KUGOU,
+            title = "I Love You So (Acoustic)",
+            artist = "The Walters",
+            album = "I Love You So (Acoustic)",
+            durationMs = 147_000L,
+        )
+        val combinedUnconfirmed = kugouStart.copy(
+            title = "Lyrics by：Charles Ekhaus",
+            artist = "The Walters-I Love You So (Acoustic)",
+            durationMs = 147_000L,
+            album = "I Love You So (Acoustic)",
+        )
+        val unresolved = combinedUnconfirmed.copy(title = "", polluted = true)
+
+        listOf(combinedUnconfirmed, unresolved).forEach { anchor ->
+            assertEquals(
+                TimelineContentPolicy.Decision.APPLY,
+                TimelineContentPolicy.decide(
+                    "superlyric",
+                    anchor,
+                    TimelineContent(sourceId = "superlyric", track = publisher, song = null),
+                ),
+            )
+        }
+        assertEquals(
+            TimelineContentPolicy.Decision.DROP_WRONG_TRACK,
+            TimelineContentPolicy.decide(
+                "superlyric",
+                unresolved,
+                TimelineContent(sourceId = "superlyric", track = publisher.copy(title = "Other"), song = null),
+            ),
+        )
+    }
+
     private companion object {
         const val SALT = "com.salt.music"
         const val KUGOU = "com.kugou.android"

@@ -71,6 +71,17 @@ data class TrackIdentity(
         .filter(Char::isLetterOrDigit)
 
     /**
+     * 编号键：时长已知、歌手或专辑非空且有 [trackToken] 时为「包名|编号」，否则为 null。
+     * [normalizedKey] 与严格匹配 [matches] 共用这一个来源，两处对「何时只认编号」的判断不会分叉。
+     */
+    private fun trackTokenKey(): String? {
+        val token = trackToken?.trim().orEmpty()
+        val hasKeyFields = durationMs > 0L && (artist.isNotBlank() || album.isNotBlank())
+        if (!hasKeyFields || token.isEmpty()) return null
+        return listOf(packageName.trim(), token).joinToString(SEPARATOR.toString())
+    }
+
+    /**
      * 规范化键（锚点侧的换曲判据，不参与跨进程严格匹配）。QQ HD 使用歌名和歌手，其余播放器
      * 优先使用 mediaId。
      *
@@ -86,12 +97,11 @@ data class TrackIdentity(
     fun normalizedKey(): String {
         qqMusicHdKey()?.let { return it }
         val id = mediaId?.trim().orEmpty()
-        val token = trackToken?.trim().orEmpty()
+        val tokenKey = trackTokenKey()
         val hasKeyFields = durationMs > 0L && (artist.isNotBlank() || album.isNotBlank())
         return when {
             id.isNotEmpty() -> listOf(packageName.trim(), id).joinToString(SEPARATOR.toString())
-            hasKeyFields && token.isNotEmpty() ->
-                listOf(packageName.trim(), token).joinToString(SEPARATOR.toString())
+            tokenKey != null -> tokenKey
             hasKeyFields ->
                 listOf(packageName.trim(), artist.trim(), album.trim(), durationMs.toString())
                     .joinToString(SEPARATOR.toString())
@@ -102,7 +112,8 @@ data class TrackIdentity(
     /**
      * 严格身份匹配：
      * - 两侧都有非空 mediaId → 包名 + mediaId 必须相等，且不再看其他字段；
-     * - 任一侧缺 mediaId → 双方组合键必须完全相等（此时 mediaId 差异不参与判定，
+     * - 任一侧缺 mediaId 且两侧都有编号键 → 编号键必须相等；
+     * - 否则 → 双方组合键必须完全相等（此时 mediaId 差异不参与判定，
      *   因此这里必须用组合键而不是 [normalizedKey]，后者会被自身的 mediaId 短路）。
      */
     fun matches(other: TrackIdentity): Boolean {
@@ -116,6 +127,11 @@ data class TrackIdentity(
         if (selfId.isNotEmpty() && otherId.isNotEmpty()) {
             return packageName.trim() == other.packageName.trim() && selfId == otherId
         }
+        // 两侧都带净化器编号（同一进程、同一净化器实例构建）时以编号为准：组合键含标题、歌手、专辑、时长，
+        // 车载歌词会在单曲内改写这些字段，来源提交时的身份与之后的锚点身份因此对不上。编号只在净化器判定换曲时变。
+        val selfToken = trackTokenKey()
+        val otherToken = other.trackTokenKey()
+        if (selfToken != null && otherToken != null) return selfToken == otherToken
         return compositeKey() == other.compositeKey()
     }
 

@@ -10,6 +10,7 @@ import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.SystemClock
 import com.juren233.hyperlyricsenhanced.provider.OfficialProviderCatalog
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * [MediaSessionMetadataSanitizer] 与 Android 类型之间的唯一转换点。
@@ -23,6 +24,23 @@ internal object MediaSessionMetadataAdapter {
     private val processSanitizer = MediaSessionMetadataSanitizer()
 
     /**
+     * 包名 → 该包最近一次歌词内容自带的歌名与歌手（SuperLyric、LyricInfo、Lyricon 都经统一时间轴到达）。
+     * 只在净化器需要独立锚点时被读取，且净化器会用会话歌手串交叉验证后才采用；过期的旧曲条目
+     * 拼不出新曲的歌手串，不会被误用，所以不必在换曲时清理。
+     */
+    private val lyricsSongAnchors = ConcurrentHashMap<String, TrackAnchor>()
+
+    /** 记录歌词源提供的歌名与歌手，供净化器作为 [AnchorSource.LYRICS_SONG] 锚点。 */
+    fun offerLyricsSong(packageName: String?, title: String?, artist: String?) {
+        val pkg = packageName?.trim().orEmpty()
+        val name = title?.trim().orEmpty()
+        val singer = artist?.trim().orEmpty()
+        // 歌手为空无法与会话的「歌名-歌手」组合串交叉验证，不记录。
+        if (pkg.isEmpty() || name.isEmpty() || singer.isEmpty()) return
+        lyricsSongAnchors[pkg] = TrackAnchor(AnchorSource.LYRICS_SONG, title = name, artist = singer)
+    }
+
+    /**
      * 对当前会话取一次进程内判定；null 表示该包不参与净化，调用方沿用原始文本。
      * Apple Music 的会话标题由模块自己改写（原名恢复会让同一首歌的标题多次变化），
      * 这类变化不是车载歌词的漂移证据。净化器失败也不能影响调用方。
@@ -34,11 +52,16 @@ internal object MediaSessionMetadataAdapter {
     ): SanitizedTrack? {
         if (packageName == OfficialProviderCatalog.APPLE_MUSIC_PACKAGE_NAME) return null
         return runCatching {
-            processSanitizer.sanitize(sampleOf(packageName, metadata, playbackState))
+            processSanitizer.sanitize(sampleOf(packageName, metadata, playbackState)) {
+                listOfNotNull(lyricsSongAnchors[packageName])
+            }
         }.getOrNull()
     }
 
-    fun resetProcessState() = processSanitizer.reset()
+    fun resetProcessState() {
+        processSanitizer.reset()
+        lyricsSongAnchors.clear()
+    }
 
     fun sampleOf(
         packageName: String,

@@ -539,6 +539,109 @@ class MediaSessionMetadataSanitizerTest {
         assertEquals("", MediaSessionMetadataSanitizer.normalizeForMatch(" -- "))
     }
 
+    // ---- 歌词源自带的歌名歌手（SuperLyric / LyricInfo / Lyricon）作为锚点：必须与会话歌手串交叉验证 ----
+
+    private fun lyricsSong(title: String, artist: String) =
+        TrackAnchor(AnchorSource.LYRICS_SONG, title = title, artist = artist)
+
+    @Test
+    fun `lyrics song anchor recovers the artist-dash-title form`() {
+        val result = sanitizer.sanitize(
+            saltLine(0),
+            anchors = listOf(lyricsSong("跟佢做个 FRIEND", "许冠杰")),
+        )
+
+        assertEquals(Status.RECOVERED, result.status)
+        assertEquals("跟佢做个 FRIEND", result.title)
+        assertEquals("许冠杰", result.artist)
+        assertEquals(SanitizedTrack.Resolution.ANCHOR, result.resolvedBy)
+    }
+
+    @Test
+    fun `lyrics song anchor handles both orders with a hyphenated artist`() {
+        val titleFirst = sanitizer.sanitize(
+            sample(packageName = XIAOMI, title = "lyric", artist = "Run This Town-Jay-Z"),
+            anchors = listOf(lyricsSong("Run This Town", "Jay-Z")),
+        )
+        val artistFirst = sanitizer.sanitize(
+            sample(packageName = "com.other.player", title = "lyric", artist = "Jay-Z - Run This Town"),
+            anchors = listOf(lyricsSong("Run This Town", "Jay-Z")),
+        )
+
+        listOf(titleFirst, artistFirst).forEach {
+            assertEquals(Status.RECOVERED, it.status)
+            assertEquals("Run This Town", it.title)
+            assertEquals("Jay-Z", it.artist)
+        }
+    }
+
+    @Test
+    fun `lyrics song anchor settles a split that is ambiguous without it`() {
+        // 标题逐句漂移确认污染后，「Love Somebody-Jay-Z」有多种拆法且顺序未知，净化器不猜。
+        fun drift(target: MediaSessionMetadataSanitizer, anchors: List<TrackAnchor>): SanitizedTrack {
+            var last: SanitizedTrack? = null
+            listOf("line one", "line two", "line three").forEachIndexed { index, line ->
+                last = target.sanitize(
+                    sample(
+                        packageName = XIAOMI,
+                        title = line,
+                        artist = "Love Somebody-Jay-Z",
+                        positionMs = 107_895L + index * 1_500L,
+                    ),
+                    anchors = if (index == 2) anchors else emptyList(),
+                )
+            }
+            return last!!
+        }
+
+        val withoutAnchor = drift(MediaSessionMetadataSanitizer(), emptyList())
+        assertEquals(Status.UNRESOLVED, withoutAnchor.status)
+        assertTrue(withoutAnchor.candidates.size > 1)
+
+        val withAnchor = drift(MediaSessionMetadataSanitizer(), listOf(lyricsSong("Love Somebody", "Jay-Z")))
+        assertEquals(Status.RECOVERED, withAnchor.status)
+        assertEquals("Love Somebody", withAnchor.title)
+        assertEquals("Jay-Z", withAnchor.artist)
+    }
+
+    @Test
+    fun `a polluted lyrics song anchor is not adopted`() {
+        // 发布端把歌词行当成歌名：它拼不出会话的歌手串，必须被丢弃，而不是被当成真歌名。
+        val pollutedPublisher = lyricsSong(SALT_LINES[2], "许冠杰")
+        listOf(0, 1).forEach { sanitizer.sanitize(saltLine(it)) }
+
+        val result = sanitizer.sanitize(saltLine(2), anchors = listOf(pollutedPublisher))
+
+        assertEquals(Status.UNRESOLVED, result.status)
+        assertEquals(null, result.title)
+    }
+
+    @Test
+    fun `a lyrics song anchor with the wrong artist or no artist is not adopted`() {
+        listOf(0, 1).forEach { sanitizer.sanitize(saltLine(it)) }
+
+        listOf(lyricsSong("跟佢做个 FRIEND", "别的歌手"), TrackAnchor(AnchorSource.LYRICS_SONG, title = "跟佢做个 FRIEND"))
+            .forEach { anchor ->
+                val result = sanitizer.sanitize(saltLine(2), anchors = listOf(anchor))
+                assertEquals(Status.UNRESOLVED, result.status)
+                assertEquals(null, result.title)
+            }
+    }
+
+    @Test
+    fun `a stale lyrics song anchor from the previous song never applies`() {
+        val result = sanitizer.sanitize(
+            sample(
+                title = "另一首歌的歌词",
+                artist = "Taylor Swift - Sweet Nothing",
+                album = "Midnights",
+            ),
+            anchors = listOf(lyricsSong("跟佢做个 FRIEND", "许冠杰")),
+        )
+
+        assertEquals(Status.CLEAN, result.status)
+    }
+
     private val notificationAnchor = TrackAnchor(AnchorSource.NOTIFICATION, title = "跟佢做个 FRIEND")
 
     private fun saltLine(index: Int, albumArtist: String? = null) = sample(
