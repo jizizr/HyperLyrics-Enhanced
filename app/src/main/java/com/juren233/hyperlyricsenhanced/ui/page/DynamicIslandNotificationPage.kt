@@ -3,7 +3,6 @@ package com.juren233.hyperlyricsenhanced.ui.page
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.os.PowerManager
 import android.provider.Settings
 import com.juren233.hyperlyricsenhanced.ui.component.NumberInputDialog
 import com.juren233.hyperlyricsenhanced.ui.component.SimpleDialog
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import com.juren233.hyperlyricsenhanced.common.BatteryOptimization
 import com.juren233.hyperlyricsenhanced.common.ServiceConstants
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.lyric.ConfigRepository
@@ -462,26 +462,13 @@ fun DynamicIslandNotificationPage() {
                                 }
                             },
                             onBatteryOptimizationClick = {
-                                try {
-                                    val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-                                    if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
-                                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                            data = "package:${context.packageName}".toUri()
-                                        }
-                                        context.startActivity(intent)
-                                    } else {
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(message = msgBatteryIgnored, duration = SnackbarDuration.Custom(2000L))
-                                        }
+                                if (BatteryOptimization.isSatisfied(context)) {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(message = msgBatteryIgnored, duration = SnackbarDuration.Custom(2000L))
                                     }
-                                } catch (_: Exception) {
-                                    try {
-                                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(message = msgBatteryFailed, duration = SnackbarDuration.Custom(2000L))
-                                        }
+                                } else if (!BatteryOptimization.request(context)) {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(message = msgBatteryFailed, duration = SnackbarDuration.Custom(2000L))
                                     }
                                 }
                             },

@@ -145,17 +145,21 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
     /**
      * 锚点按需读取：[anchorProvider] 可能是跨进程调用（如读取通知），只有歌手字段能拆分、
      * 标题带歌手或已有污染证据时才会被调用，正常曲目一次都不会调用。
+     * 参数是本次采样所属曲目段的编号（与结果的 [SanitizedTrack.trackToken] 相同），供调用方按曲目段缓存。
+     * 调用发生在净化器锁内，同一实例的调用彼此串行。
      */
     fun sanitize(
         sample: SessionMetadataSample,
         activeLyricLines: List<String> = emptyList(),
-        anchorProvider: () -> List<TrackAnchor>,
+        anchorProvider: (trackToken: String) -> List<TrackAnchor>,
     ): SanitizedTrack = synchronized(lock) {
         val rawTitle = sample.title?.trim().orEmpty()
         val rawArtist = sample.artist?.trim().orEmpty()
         val titleNorm = normalizeForMatch(rawTitle)
+        val state = sessions.getOrPut(sample.packageName) { TrackState() }
+        // 惰性求值发生在下方换曲判定之后，读到的是本次采样所属曲目段的编号。
         val usableAnchors by lazy(LazyThreadSafetyMode.NONE) {
-            anchorProvider()
+            anchorProvider(state.token.toString())
                 .filter { !it.title.isNullOrBlank() }
                 // 歌词源的歌名歌手可能自己就被污染：只有歌名加歌手恰好拼成会话的歌手串（与顺序、
                 // 分隔符、名字里的连字符无关）才算独立证据；对不上就不采用，宁可留空也不填错。
@@ -163,7 +167,6 @@ class MediaSessionMetadataSanitizer(maxSessions: Int = DEFAULT_MAX_SESSIONS) {
                 .sortedBy { it.source.ordinal }
         }
 
-        val state = sessions.getOrPut(sample.packageName) { TrackState() }
         val previous = state.last
         val previousTitleNorm = state.lastTitleNorm
         val boundary = if (previous == null) Boundary.NEW_TRACK else boundaryOf(previous, sample)

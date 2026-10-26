@@ -26,6 +26,16 @@ sealed interface MigrationScope {
 object MigrationData {
     val notes = listOf(
         MigrationNote(
+            versionCode = 230003,
+            scope = MigrationScope.MinorVersion(major = 8, minor = 3),
+            items = listOf(
+                MigrationItem(
+                    text = "Apple Music 插件现已解耦合",
+                    summary = "\n从8.3版本开始，Apple Music 已从模块本体中抽离出来，作为插件的形式加载，并为 Lyricon 插件提供自动更新功能（建议开启通知权限，仅在自动更新完成后推送提醒）。Apple Music 用户无需担心新增额外操作，依旧保持开箱即用体验。\n\n非 Apple Music 用户现已支持在 Lyricon 配置页中移除 Apple Music 插件，可进一步减少占用。",
+                ),
+            ),
+        ),
+        MigrationNote(
             versionCode = 200000,
             scope = MigrationScope.MinorVersion(major = 8, minor = 0),
             items = listOf(

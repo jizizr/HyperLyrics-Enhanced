@@ -27,6 +27,15 @@ object ProviderAutoUpdatePolicy {
     /** 可选间隔（小时），与设置页下拉顺序一一对应。 */
     val CHOICE_HOURS = listOf(INTERVAL_OFF, 1, 2, 6, 12, INTERVAL_PERIODIC_ONLY)
 
+    /**
+     * 单次调度内的最大尝试次数（含首次）。每次重试都要重新拉起后台进程并重新拉目录，
+     * 上限取小值：放弃后等下一个周期或下次打开 App 再检查，比反复退避省电。
+     */
+    const val MAX_RUN_ATTEMPTS = 3
+
+    /** [runAttemptCount] 从 0 起，已达上限时本轮不再尝试。 */
+    fun shouldGiveUp(runAttemptCount: Int): Boolean = runAttemptCount >= MAX_RUN_ATTEMPTS
+
     fun intervalHours(): Int {
         val prefs = PrefsBridge.getPrefs()
         // 一次性迁移：旧的布尔开关 → 间隔偏好（关=0，开=默认 6 小时）。

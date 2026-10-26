@@ -401,6 +401,40 @@ internal fun SetupIntro(
                 .drawBehind { drawRect(surface, alpha = clamp01(1f - reveal.value)) },
         )
 
+        // 层级：歌词在最下，超级岛（液态岛身、音乐态、Logo）整体盖在歌词之上，歌词汇入时从岛下方穿过。
+        // 其余歌词：每句一个图层，便于按距离模糊；汇入超级岛时边飞边缩到岛宽，进岛时才融入消失。
+        val blurMargin = with(density) { 10.dp.toPx() }
+        INTRO_LYRICS.indices.filter { it != HERO_LINE }.forEach { line ->
+            val layout = lyricLayouts[line]
+            IntroLyricLine(
+                layout = layout,
+                color = onSurface,
+                margin = blurMargin,
+                transform = { lyricLineTransform(time, line, layout, geometry, blurMargin) },
+            )
+        }
+
+        // 产品名这句单独一层：唱到它之前与其他句一样按距离模糊。
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val blur = lineBlur(lineDistance(time, HERO_LINE)) * geometry.dp
+                    renderEffect = if (blur > 0.3f) BlurEffect(blur, blur, TileMode.Decal) else null
+                },
+        ) {
+            drawHeroLyric(
+                t = time,
+                geometry = geometry,
+                layout = heroLayout,
+                words = heroWords,
+                wordTimes = wordTimes,
+                color = onSurface,
+                palette = palette,
+                exitValue = introExit(time),
+            )
+        }
+
         // 液态层：先画放大一圈的浅色形状作细边框，再画岛身。
         listOf(true, false).forEach { isRim ->
             Canvas(
@@ -440,18 +474,6 @@ internal fun SetupIntro(
                     )
                 }
             }
-        }
-
-        // 其余歌词：每句一个图层，便于按距离模糊；汇入超级岛时边飞边缩到岛宽，进岛时才融入消失。
-        val blurMargin = with(density) { 10.dp.toPx() }
-        INTRO_LYRICS.indices.filter { it != HERO_LINE }.forEach { line ->
-            val layout = lyricLayouts[line]
-            IntroLyricLine(
-                layout = layout,
-                color = onSurface,
-                margin = blurMargin,
-                transform = { lyricLineTransform(time, line, layout, geometry, blurMargin) },
-            )
         }
 
         Canvas(Modifier.fillMaxSize()) {
@@ -497,27 +519,6 @@ internal fun SetupIntro(
                     rim = 1f - exitValue,
                 )
             }
-        }
-
-        // 产品名这句单独一层：唱到它之前与其他句一样按距离模糊。
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    val blur = lineBlur(lineDistance(time, HERO_LINE)) * geometry.dp
-                    renderEffect = if (blur > 0.3f) BlurEffect(blur, blur, TileMode.Decal) else null
-                },
-        ) {
-            drawHeroLyric(
-                t = time,
-                geometry = geometry,
-                layout = heroLayout,
-                words = heroWords,
-                wordTimes = wordTimes,
-                color = onSurface,
-                palette = palette,
-                exitValue = introExit(time),
-            )
         }
 
         Text(

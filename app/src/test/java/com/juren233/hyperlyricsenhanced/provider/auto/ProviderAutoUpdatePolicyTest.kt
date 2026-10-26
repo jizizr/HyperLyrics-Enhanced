@@ -131,6 +131,15 @@ class ProviderAutoUpdatePolicyTest {
     }
 
     @Test
+    fun givesUpOnceRunAttemptsReachTheCap() {
+        val cap = ProviderAutoUpdatePolicy.MAX_RUN_ATTEMPTS
+        assertFalse(ProviderAutoUpdatePolicy.shouldGiveUp(0))
+        assertFalse(ProviderAutoUpdatePolicy.shouldGiveUp(cap - 1))
+        assertTrue(ProviderAutoUpdatePolicy.shouldGiveUp(cap))
+        assertTrue(ProviderAutoUpdatePolicy.shouldGiveUp(cap + 1))
+    }
+
+    @Test
     fun choiceListCoversAllUiOptions() {
         assertEquals(
             listOf(0, 1, 2, 6, 12, 24),

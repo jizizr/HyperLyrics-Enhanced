@@ -8,10 +8,10 @@ object UIConstants {
     // ================= APP CORE KEYS =================
     const val KEY_WORK_MODE = "key_work_mode"
     const val KEY_SETUP_COMPLETED = "key_setup_completed"
-    /** 用户已走完的首启流程版本；低于 [CURRENT_SETUP_FLOW_VERSION] 时重走一次首启流程。 */
+    /** 用户已走完的首启流程版本，x.y.z 字符串；低于 [SetupFlowVersion.CURRENT] 时重走一次首启流程。 */
+    const val KEY_SETUP_FLOW_VERSION_NAME = "key_setup_flow_version_name"
+    /** 旧版整数写法（主×10＋次，8.3 → 83），仅作为兼容输入读取，由 [SetupFlowVersion] 还原，不再写入。 */
     const val KEY_SETUP_FLOW_VERSION = "key_setup_flow_version"
-    /** 当前首启流程版本，取主.次版本（8.3 → 83）：同一 8.3.x 内升级不重走，升到 8.3 起的任何版本只走一次。 */
-    const val CURRENT_SETUP_FLOW_VERSION = 83
     const val KEY_THEME_MODE = "key_theme_mode"
     const val KEY_APP_LANGUAGE = "key_app_language"
     const val KEY_MONET_COLOR = "key_monet_color"

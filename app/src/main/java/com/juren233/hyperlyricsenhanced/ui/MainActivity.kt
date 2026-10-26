@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.juren233.hyperlyricsenhanced.BuildConfig
+import com.juren233.hyperlyricsenhanced.common.SetupFlowVersion
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.provider.auto.ProviderAutoUpdateScheduler
 import com.juren233.hyperlyricsenhanced.ui.navigation.AppNavigation
@@ -44,7 +45,7 @@ class MainActivity : ComponentActivity() {
         window.setBackgroundDrawable(ColorDrawable(if (isDark) Color.BLACK else 0xFFF7F7F7.toInt()))
 
         val setupCompleted = prefs.getBoolean(UIConstants.KEY_SETUP_COMPLETED, UIConstants.DEFAULT_SETUP_COMPLETED) &&
-            prefs.getInt(UIConstants.KEY_SETUP_FLOW_VERSION, 0) >= UIConstants.CURRENT_SETUP_FLOW_VERSION
+            SetupFlowVersion.isCompleted(prefs)
         
         val excludeFromRecents = prefs.getBoolean(UIConstants.KEY_EXCLUDE_FROM_RECENTS, UIConstants.DEFAULT_EXCLUDE_FROM_RECENTS)
         if (excludeFromRecents) {

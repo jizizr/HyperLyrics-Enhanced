@@ -489,7 +489,7 @@ class MediaSessionMetadataSanitizerTest {
     @Test
     fun `anchors are only read when the sample could need them`() {
         var reads = 0
-        val provider = { reads++; emptyList<TrackAnchor>() }
+        val provider = { _: String -> reads++; emptyList<TrackAnchor>() }
 
         sanitizer.sanitize(sample(title = "Sunshine", artist = "Artist"), anchorProvider = provider)
         sanitizer.sanitize(sample(title = "Sunshine", artist = "Artist"), anchorProvider = provider)

@@ -16,6 +16,7 @@ import com.juren233.hyperlyricsenhanced.common.media.AnchorSource
 import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataAdapter
 import com.juren233.hyperlyricsenhanced.common.media.MediaSessionMetadataSanitizer
 import com.juren233.hyperlyricsenhanced.common.media.SanitizedTrack
+import com.juren233.hyperlyricsenhanced.common.media.SessionMetadataSample
 import com.juren233.hyperlyricsenhanced.common.media.TrackAnchor
 
 /**
@@ -36,6 +37,7 @@ internal class OfficialProviderMetadataFeed(
     private val diagnostic: ((String) -> Unit)? = null,
 ) {
     private val sanitizer = MediaSessionMetadataSanitizer()
+    private val notificationAnchorCache = NotificationAnchorCache(::queryNotificationAnchors)
     private var lastDiagnosticKey: String? = null
 
     fun filter(
@@ -46,7 +48,9 @@ internal class OfficialProviderMetadataFeed(
         metadata ?: return null
         return runCatching {
             val sample = MediaSessionMetadataAdapter.sampleOf(playerPackageName, metadata, playbackState)
-            val track = sanitizer.sanitize(sample) { notificationAnchorsFor(sessionToken) }
+            val track = sanitizer.sanitize(sample) { trackToken ->
+                notificationAnchorsFor(sessionToken, trackToken, sample)
+            }
             record(sample.title, track)
             if (track.status == SanitizedTrack.Status.RECOVERED) {
                 MediaSessionMetadataAdapter.rewrite(metadata, track)
@@ -59,8 +63,16 @@ internal class OfficialProviderMetadataFeed(
         }
     }
 
-    private fun notificationAnchorsFor(token: MediaSession.Token?): List<TrackAnchor> {
+    private fun notificationAnchorsFor(
+        token: MediaSession.Token?,
+        trackToken: String,
+        sample: SessionMetadataSample,
+    ): List<TrackAnchor> {
         if (!notificationAnchors || token == null) return emptyList()
+        return notificationAnchorCache.anchors(token, trackToken, sample.title, sample.sampledAtMs)
+    }
+
+    private fun queryNotificationAnchors(token: MediaSession.Token): List<TrackAnchor> {
         val application = applicationProvider() ?: return emptyList()
         val manager = application.getSystemService(NotificationManager::class.java) ?: return emptyList()
         return manager.activeNotifications.mapNotNull { sbn ->

@@ -384,8 +384,9 @@ fun MainPage(outroStage: Int = MAIN_PAGE_OUTRO_STAGES) {
     var migrationNotes by remember { mutableStateOf<List<com.juren233.hyperlyricsenhanced.utils.MigrationNote>>(emptyList()) }
     var showMigrationDialog by remember { mutableStateOf(false) }
     val migrationTitle = stringResource(R.string.migration_dialog_title)
-    LaunchedEffect(fullyComposed) {
-        if (!fullyComposed) return@LaunchedEffect
+    // 完成转场（outro）进行中不弹更新说明，等转场演完再弹，避免盖住动画。
+    LaunchedEffect(fullyComposed, outroRunning) {
+        if (!fullyComposed || outroRunning) return@LaunchedEffect
         try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
             val currentVersion = PackageInfoCompat.getLongVersionCode(pInfo)

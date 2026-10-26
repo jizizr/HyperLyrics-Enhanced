@@ -890,6 +890,7 @@
     <string name="island_touch_seconds_range">1–300 seconds</string>
     <string name="title_permission_plugin_update_notification">Notification Permission</string>
     <string name="summary_permission_plugin_update_notification">Lets us remind you after a plugin updates automatically</string>
+    <string name="summary_permission_battery_optimization">Lets plugin auto-updates run on time in the background</string>
     <string name="channel_name_provider_update">Plugin updates</string>
     <string name="provider_update_notification_title">%1$s plugin updated</string>
     <string name="provider_update_notification_text">Restart the app to load the new plugin. Tap here to restart</string>

@@ -79,10 +79,12 @@ import androidx.core.content.edit
 import androidx.core.net.toUri
 import com.juren233.hyperlyricsenhanced.BuildConfig
 import com.juren233.hyperlyricsenhanced.R
+import com.juren233.hyperlyricsenhanced.common.BatteryOptimization
 import com.juren233.hyperlyricsenhanced.common.FeatureEntryApplier
 import com.juren233.hyperlyricsenhanced.common.InstalledAppsPermission
 import com.juren233.hyperlyricsenhanced.common.PrefsBridge
 import com.juren233.hyperlyricsenhanced.common.RootConstants
+import com.juren233.hyperlyricsenhanced.common.SetupFlowVersion
 import com.juren233.hyperlyricsenhanced.utils.LogManager
 import com.juren233.hyperlyricsenhanced.common.UIConstants
 import com.juren233.hyperlyricsenhanced.lyric.ConfigRepository
@@ -170,6 +172,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
     val installedAppsPermission = remember(context) { InstalledAppsPermission.resolve(context) }
     var isNotificationListenerGranted by remember { mutableStateOf(false) }
     var isPostNotificationGranted by remember { mutableStateOf(false) }
+    var isBatteryExempt by remember { mutableStateOf(BatteryOptimization.isSatisfied(context)) }
     var isAppListGranted by remember {
         mutableStateOf(InstalledAppsPermission.isGranted(context, installedAppsPermission))
     }
@@ -190,6 +193,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
             isNotificationListenerGranted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
             isPostNotificationGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
             isAppListGranted = InstalledAppsPermission.isGranted(context, installedAppsPermission)
+            isBatteryExempt = BatteryOptimization.isSatisfied(context)
             delay(1000.milliseconds)
         }
     }
@@ -197,7 +201,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
     val completeSetup = {
         prefs.edit {
             putBoolean(UIConstants.KEY_SETUP_COMPLETED, true)
-            putInt(UIConstants.KEY_SETUP_FLOW_VERSION, UIConstants.CURRENT_SETUP_FLOW_VERSION)
+            SetupFlowVersion.record(this)
         }
         onNavigateToMain()
     }
@@ -220,8 +224,9 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
         else -> false
     }
     val permissionPageCompleted = when (workMode) {
-        SETUP_MODE_DYNAMIC_ISLAND -> isNotificationListenerGranted && isPostNotificationGranted && isAppListGranted
-        else -> isAppListGranted && isPostNotificationGranted
+        SETUP_MODE_DYNAMIC_ISLAND ->
+            isNotificationListenerGranted && isPostNotificationGranted && isAppListGranted && isBatteryExempt
+        else -> isAppListGranted && isPostNotificationGranted && isBatteryExempt
     }
 
     // 首启动画：系统关闭动画（动画时长缩放为 0）时直接显示引导内容。
@@ -361,11 +366,13 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
                                     isNotificationGranted = isNotificationListenerGranted,
                                     isPostNotificationGranted = isPostNotificationGranted,
                                     isAppListGranted = isAppListGranted,
+                                    isBatteryExempt = isBatteryExempt,
                                     onRequestAppListPermission = requestAppListPermission,
                                 )
                                 else -> AppListPermissionPage(
                                     isAppListGranted = isAppListGranted,
                                     isPostNotificationGranted = isPostNotificationGranted,
+                                    isBatteryExempt = isBatteryExempt,
                                     onRequestAppListPermission = requestAppListPermission,
                                 )
                             }
@@ -373,6 +380,7 @@ fun SetupPage(onNavigateToMain: () -> Unit) {
                                 SETUP_MODE_MI_HYPER_ISLAND -> AppListPermissionPage(
                                     isAppListGranted = isAppListGranted,
                                     isPostNotificationGranted = isPostNotificationGranted,
+                                    isBatteryExempt = isBatteryExempt,
                                     onRequestAppListPermission = requestAppListPermission,
                                 )
                                 SETUP_MODE_DYNAMIC_ISLAND -> WhitelistPage()
@@ -736,11 +744,32 @@ private fun SetupPermissionRow(
     )
 }
 
+/**
+ * 忽略电池优化：让插件自动更新的后台周期任务能按时运行。授权弹窗不可用时，
+ * [BatteryOptimization.request] 回退到系统的电池优化列表。
+ */
+@Composable
+private fun BatteryOptimizationRow(granted: Boolean, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    SetupPermissionRow(
+        title = stringResource(R.string.title_battery_optimization),
+        summary = if (granted) {
+            stringResource(R.string.toast_permission_granted)
+        } else {
+            stringResource(R.string.summary_permission_battery_optimization)
+        },
+        granted = granted,
+        onClick = { BatteryOptimization.request(context) },
+        modifier = modifier,
+    )
+}
+
 @Composable
 private fun PermissionPage(
     isNotificationGranted: Boolean,
     isPostNotificationGranted: Boolean,
     isAppListGranted: Boolean,
+    isBatteryExempt: Boolean,
     onRequestAppListPermission: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -775,6 +804,10 @@ private fun PermissionPage(
                     onClick = onRequestAppListPermission,
                     modifier = Modifier.setupStagger(3),
                 )
+                BatteryOptimizationRow(
+                    granted = isBatteryExempt,
+                    modifier = Modifier.setupStagger(4),
+                )
             }
         }
     }
@@ -782,12 +815,14 @@ private fun PermissionPage(
 
 /**
  * “授予必要权限”页（米系超级岛歌词与仅 Apple Music 模式）：需要获取应用列表权限，
- * 仅用于模块本地识别音乐App；以及通知权限，用于插件自动更新后的提醒。
+ * 仅用于模块本地识别音乐App；通知权限，用于插件自动更新后的提醒；
+ * 以及忽略电池优化，让插件自动更新的后台任务能按时运行。
  */
 @Composable
 private fun AppListPermissionPage(
     isAppListGranted: Boolean,
     isPostNotificationGranted: Boolean,
+    isBatteryExempt: Boolean,
     onRequestAppListPermission: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -816,6 +851,10 @@ private fun AppListPermissionPage(
                     granted = isPostNotificationGranted,
                     onClick = { context.openAppNotificationSettings() },
                     modifier = Modifier.setupStagger(2),
+                )
+                BatteryOptimizationRow(
+                    granted = isBatteryExempt,
+                    modifier = Modifier.setupStagger(3),
                 )
             }
         }

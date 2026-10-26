@@ -892,6 +892,7 @@
     <string name="island_touch_seconds_range">1–300 秒</string>
     <string name="title_permission_plugin_update_notification">通知权限</string>
     <string name="summary_permission_plugin_update_notification">便于在插件自动更新后提醒你</string>
+    <string name="summary_permission_battery_optimization">让插件自动更新能在后台按时运行</string>
     <string name="channel_name_provider_update">插件更新</string>
     <string name="provider_update_notification_title">%1$s插件已更新</string>
     <string name="provider_update_notification_text">重启该 App 后方可加载新插件，点击此处重启</string>
