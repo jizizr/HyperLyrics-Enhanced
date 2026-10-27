@@ -50,6 +50,13 @@ import com.juren233.hyperlyricsenhanced.root.source.RootLyricSink
 import com.juren233.hyperlyricsenhanced.root.source.SuperLyricSource
 import com.juren233.hyperlyricsenhanced.root.timeline.LocalTimelineDriver
 import com.juren233.hyperlyricsenhanced.root.timeline.SystemMediaPlaybackAnchor
+import com.juren233.hyperlyricsenhanced.root.source.MediaSessionOnlineFallbackCoordinator
+import com.juren233.hyperlyricsenhanced.root.source.OnlineFallbackSongMapper
+import com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences
+import com.juren233.hyperlyricsenhanced.online.OnlineLyricTargeter
+import com.juren233.hyperlyricsenhanced.online.OnlineTranslationSourcePreferences
+import com.juren233.hyperlyricsenhanced.lyric.model.Song
+import com.juren233.hyperlyricsenhanced.timeline.model.TrackIdentity
 import com.juren233.hyperlyricsenhanced.root.aitrans.AITranslator
 import com.juren233.hyperlyricsenhanced.root.utils.HookLogger
 import com.juren233.hyperlyricsenhanced.root.utils.LyricRuntimeDiagnostics
@@ -185,6 +192,7 @@ class HookEntry : XposedModule() {
         private set
     private var playbackAnchor: SystemMediaPlaybackAnchor? = null
     private var localTimelineDriver: LocalTimelineDriver? = null
+    private var mediaSessionOnlineFallback: MediaSessionOnlineFallbackCoordinator? = null
     private var lyricsOnlyAfterHotReload = false
     private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var pendingSystemMediaProviderRefresh: Runnable? = null
@@ -611,6 +619,62 @@ class HookEntry : XposedModule() {
             )
             localTimelineDriver = driver
             driver.start()
+            mediaSessionOnlineFallback = MediaSessionOnlineFallbackCoordinator(
+                tracks = object : MediaSessionOnlineFallbackCoordinator.Tracks {
+                    private var listener: SystemMediaPlaybackAnchor.Listener? = null
+                    override val current get() = anchor.currentTrack
+                    override val usable get() = anchor.sessionUsable
+                    override fun listen(onChanged: () -> Unit) {
+                        val observer = object : SystemMediaPlaybackAnchor.Listener {
+                            override fun onTrackChanged(track: TrackIdentity?) = onChanged()
+                            override fun onTrackMetadataRefreshed(track: TrackIdentity) = onChanged()
+                            override fun onPlaybackStateChanged(isPlaying: Boolean) = Unit
+                            override fun onSessionValidityChanged(usable: Boolean) = onChanged()
+                        }
+                        listener = observer
+                        anchor.addListener(observer)
+                    }
+                    override fun unlisten() {
+                        listener?.let(anchor::removeListener)
+                        listener = null
+                    }
+                },
+                timeline = driver.openOnlineFallback(),
+                settings = {
+                    val stored = MediaSessionOnlineFallbackPreferences.read(prefs)
+                    stored.copy(
+                        enabled = SystemUiEnhancementGate.lyricRuntimeMode() == SystemUiLyricRuntimeMode.LYRIC_DISPLAY &&
+                            IslandRuntimePreferenceOverrides.getBoolean(
+                                MediaSessionOnlineFallbackPreferences.ENABLED, stored.enabled,
+                            ),
+                        packages = MediaSessionOnlineFallbackPreferences.parsePackages(
+                            IslandRuntimePreferenceOverrides.getString(
+                                MediaSessionOnlineFallbackPreferences.PACKAGES,
+                                prefs.getString(MediaSessionOnlineFallbackPreferences.PACKAGES, "").orEmpty(),
+                            ),
+                        ),
+                    )
+                },
+                fetchSong = { track, sources ->
+                    val lines = OnlineLyricTargeter.fetchBestLyric(
+                        context = moduleContext() ?: app,
+                        pkgName = track.packageName,
+                        title = track.title,
+                        artist = track.artist,
+                        durationMs = track.durationMs,
+                        album = track.album,
+                        sourceOrder = sources,
+                    )
+                    lines?.let {
+                        OnlineFallbackSongMapper.map(
+                            Song(id = track.normalizedKey(), name = track.title,
+                                artist = track.artist, duration = track.durationMs),
+                            it,
+                        )
+                    }
+                },
+            )
+            mediaSessionOnlineFallback?.start()
             LyricRuntimeDiagnostics.record("runtime_timeline_started")
 
             optionalRuntime("ai_cache") { AITranslator.init(app) }
@@ -663,6 +727,11 @@ class HookEntry : XposedModule() {
             prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                 if (SystemUiHookLifetime.retired || listenerEpoch != runtimeEpoch) return@OnSharedPreferenceChangeListener
                 IslandSlotRuntimeConfig.invalidate()
+                if (MediaSessionOnlineFallbackPreferences.isPreference(key) ||
+                    OnlineTranslationSourcePreferences.isSourcePreference(key)
+                ) {
+                    postRuntimeUpdate { mediaSessionOnlineFallback?.refresh() }
+                }
                 if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG && key != null) {
                     val value = runCatching { prefs.all[key] }.getOrNull()
                     HookLogger.i(
@@ -956,6 +1025,7 @@ class HookEntry : XposedModule() {
                 }
             }
         }
+        mediaSessionOnlineFallback?.refresh()
     }
 
     private fun updateFeatureRuntime() {
@@ -1021,6 +1091,8 @@ class HookEntry : XposedModule() {
             if (receiver != null) runtimeApp?.unregisterReceiver(receiver)
         }
         cleanup.attempt("preference_overrides") { IslandRuntimePreferenceOverrides.clear() }
+        cleanup.attempt("media_session_online_fallback") { mediaSessionOnlineFallback?.stop() }
+        mediaSessionOnlineFallback = null
         cleanup.attempt("source_manager") { sourceManager?.stop() }
         // initialize() may acquire a tracker before SourceManager itself exists.
         cleanup.attempt("lyricon_source") { lyriconSource.stop() }
@@ -1089,6 +1161,9 @@ class HookEntry : XposedModule() {
                     else -> return
                 }
                 IslandRuntimePreferenceOverrides.put(key, value)
+                if (MediaSessionOnlineFallbackPreferences.isPreference(key)) {
+                    mediaSessionOnlineFallback?.refresh()
+                }
                 if (key in com.juren233.hyperlyricsenhanced.common.IslandTouchConfig.preferenceKeys) return
                 if (key == RootConstants.KEY_ACTIVE_MEDIA_SESSION_PACKAGES && value is String) {
                     lyriconSource.onActiveMediaSessionSnapshotChanged(
