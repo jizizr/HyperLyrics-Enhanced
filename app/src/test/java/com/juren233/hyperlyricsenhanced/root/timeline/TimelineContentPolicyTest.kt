@@ -207,9 +207,7 @@ class TimelineContentPolicyTest {
         )),
     )
 
-    private val fallbackSettings get() = Settings(
-        enabled = true, packages = setOf(anchor.packageName),
-    )
+    private val fallbackSettings get() = Settings(enabled = true)
 
     private fun fallbackContent() = TimelineContent(
         sourceId = MediaSessionOnlineFallbackPolicy.SOURCE_ID,
@@ -258,9 +256,6 @@ class TimelineContentPolicyTest {
         ))
         assertFalse(TimelineContentPolicy.admitsOnlineFallback(
             "lyricon", anchor, content, null, fallbackSettings.copy(enabled = false), true,
-        ))
-        assertFalse(TimelineContentPolicy.admitsOnlineFallback(
-            "lyricon", anchor, content, null, fallbackSettings.copy(packages = emptySet()), true,
         ))
     }
 

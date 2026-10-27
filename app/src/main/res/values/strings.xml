@@ -899,9 +899,6 @@
     <string name="provider_update_notification_name_separator">、</string>
     <string name="title_misc">杂项</string>
     <string name="title_review_setup">回顾基础设置流程页</string>
-    <string name="pwa_fallback_title">浏览器 / PWA 在线歌词回退</string>
-    <string name="pwa_fallback_summary">仅对允许的播放器生效。主歌词源无歌词时，按现有在线歌词源顺序补充；无需切换 Lyricon。需要有效的歌曲名、歌手和时长。</string>
-    <string name="pwa_fallback_packages">允许的 MediaSession 包名</string>
-    <string name="pwa_fallback_packages_edit">每行一个完整包名；添加或删除行以增减播放器</string>
-    <string name="pwa_fallback_packages_empty">填写 Android MediaSession 实际包名，可用 adb shell dumpsys media_session 查看。Chrome 也需单独添加；不支持通配符。</string>
+    <string name="media_session_fallback_title">在线歌词回退</string>
+    <string name="media_session_fallback_summary">自动读取媒体播放通知对应的歌曲信息，主歌词源无歌词时按下方在线歌词源顺序查找，无需添加播放器或切换 Lyricon。</string>
 </resources>

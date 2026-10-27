@@ -36,7 +36,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
 
     private inner class Fixture(scope: TestScope) {
         val tracks = FakeTracks(a)
-        var settings = Settings(true, setOf(a.packageName), listOf(Source.NE, Source.QM))
+        var settings = Settings(true, listOf(Source.NE, Source.QM))
         var primary = false
         var primaryListener: (() -> Unit)? = null
         var closed = false
@@ -76,15 +76,16 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `disabled unconfigured and placeholder tracks never fetch`() = runTest {
+    @Test fun `disabled invalid and placeholder tracks never fetch`() = runTest {
         val f = Fixture(this)
         f.settings = f.settings.copy(enabled = false)
         f.coordinator.start()
         advanceUntilIdle()
-        f.settings = f.settings.copy(enabled = true, packages = emptySet())
+        f.settings = f.settings.copy(enabled = true)
+        f.tracks.usable = false
         f.coordinator.refresh()
         advanceUntilIdle()
-        f.settings = f.settings.copy(packages = setOf(a.packageName))
+        f.tracks.usable = true
         f.tracks.change(a.copy(title = "Playing~"))
         advanceUntilIdle()
         assertEquals(0, f.calls)
@@ -186,7 +187,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `disabling feature removing package and stopping session cancel pending requests`() = runTest {
+    @Test fun `disabling feature and stopping session cancel pending requests`() = runTest {
         val f = Fixture(this)
         var cancelled = 0
         f.fetch = { _, _ -> try { awaitCancellation() } finally { cancelled++ } }
@@ -198,15 +199,9 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.settings = f.settings.copy(enabled = true)
         f.coordinator.refresh()
         advanceTimeBy(1_500); runCurrent()
-        f.settings = f.settings.copy(packages = emptySet())
-        f.coordinator.refresh(); runCurrent()
-        assertEquals(2, cancelled)
-        f.settings = f.settings.copy(packages = setOf(a.packageName))
-        f.coordinator.refresh()
-        advanceTimeBy(1_500); runCurrent()
         f.tracks.usable = false
         f.tracks.listener?.invoke(); runCurrent()
-        assertEquals(3, cancelled)
+        assertEquals(2, cancelled)
         assertTrue(f.submissions.isEmpty())
         f.coordinator.stop()
     }
@@ -253,18 +248,30 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `adding unrelated package during request does not discard the result`() = runTest {
+    @Test fun `switching between browser PWA and native players automatically fetches each track`() = runTest {
         val f = Fixture(this)
-        val result = CompletableDeferred<Song?>()
-        f.fetch = { _, _ -> result.await() }
+        val packages = listOf("com.android.chrome", "org.chromium.webapk.example", "native.player")
+        val observed = mutableListOf<String>()
+        f.fetch = { track, _ -> observed += track.packageName; song }
+        f.tracks.current = a.copy(packageName = packages.first())
         f.coordinator.start()
-        advanceTimeBy(1_500); runCurrent()
-        f.settings = f.settings.copy(packages = f.settings.packages + "another.browser")
-        f.coordinator.refresh()
-        result.complete(song)
         advanceUntilIdle()
-        assertEquals(1, f.calls)
-        assertEquals(1, f.submissions.size)
+        packages.drop(1).forEach { pkg ->
+            f.tracks.change(a.copy(packageName = pkg))
+            advanceUntilIdle()
+        }
+        assertEquals(packages, observed)
+        assertEquals(packages, f.submissions.map { it.track?.packageName })
+        f.coordinator.stop()
+    }
+
+    @Test fun `no enabled online sources means no lookup for any player`() = runTest {
+        val f = Fixture(this)
+        f.settings = f.settings.copy(sources = emptyList())
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(0, f.calls)
+        assertTrue(f.submissions.isEmpty())
         f.coordinator.stop()
     }
 

@@ -647,12 +647,6 @@ class HookEntry : XposedModule() {
                             IslandRuntimePreferenceOverrides.getBoolean(
                                 MediaSessionOnlineFallbackPreferences.ENABLED, stored.enabled,
                             ),
-                        packages = MediaSessionOnlineFallbackPreferences.parsePackages(
-                            IslandRuntimePreferenceOverrides.getString(
-                                MediaSessionOnlineFallbackPreferences.PACKAGES,
-                                prefs.getString(MediaSessionOnlineFallbackPreferences.PACKAGES, "").orEmpty(),
-                            ),
-                        ),
                     )
                 },
                 fetchSong = { track, sources ->

@@ -170,19 +170,19 @@ If you only use Apple Music enhancements, you do not need to select system compo
 > [!TIP]
 > Missing a feature entry? Check **App settings → Feature switches**. Xiaomi-specific entries are initially enabled or disabled based on the device brand, while the Apple Music entry also depends on whether Apple Music is installed. Manually enabling an entry does not make an unsupported system feature available.
 
-### Browser / PWA online lyrics fallback
+### Online lyrics fallback
 
-Enable “Browser / PWA online lyrics fallback” in Lyrics settings (off by default). Edit the allowed MediaSession packages, one exact package per line; delete a line to remove a player. Keep Lyricon selected. Primary lyrics take priority; missing lyrics use the existing enabled online sources and their order.
+Enable “Online lyrics fallback” in Lyrics settings (off by default), then play a song in any player with a media playback notification, including browsers and PWAs. No package list is needed; keep Lyricon selected. If primary lyrics are missing, the module reads the current active MediaSession and uses the existing enabled online sources in their configured order. Primary lyrics take over when they arrive.
 
-While music is playing, run:
+A trustworthy title, artist and positive duration are required. Placeholder or unrecovered polluted metadata and stopped sessions are excluded. Non-music media such as videos may also trigger a search; matching depends on their metadata. Pause, resume and seeking use the system playback timeline. The switch takes effect immediately.
+
+If lyrics are missing, inspect the system session while playing:
 
 ```bash
 adb shell dumpsys media_session
 ```
 
-Find the active session’s `package` and check its title, artist and duration. A PWA may use its own WebAPK package or the browser package. Add `com.android.chrome` explicitly if needed; prefixes and wildcards are unsupported. Allowing Chrome permits any session in that package with complete metadata to search for lyrics, including video pages. MediaSession alone cannot distinguish music pages.
-
-A trustworthy title, artist and positive duration are required. Placeholder or unrecovered polluted metadata and stopped sessions are excluded. Pause, resume and seeking use the system playback timeline. The switch and package list update immediately.
+Find the active session’s `package` and check its title, artist and duration. A PWA may use its own WebAPK package or the browser package; both are handled automatically.
 
 Lyrics enter the existing native Super Island timeline. Some HyperOS / browser combinations expose a MediaSession without activating the native media island host; investigate that host activation path separately. This feature does not spoof titles or create another notification island. Device verification is pending.
 

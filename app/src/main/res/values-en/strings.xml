@@ -897,9 +897,6 @@
     <string name="provider_update_notification_name_separator">" &amp; "</string>
     <string name="title_misc">Miscellaneous</string>
     <string name="title_review_setup">Revisit the basic setup flow</string>
-    <string name="pwa_fallback_title">Browser / PWA online lyrics fallback</string>
-    <string name="pwa_fallback_summary">For allowed players only. Fetches missing lyrics in the existing online source order while keeping Lyricon selected. Requires a valid title, artist and duration.</string>
-    <string name="pwa_fallback_packages">Allowed MediaSession packages</string>
-    <string name="pwa_fallback_packages_edit">One exact package per line; add or delete lines to change players</string>
-    <string name="pwa_fallback_packages_empty">Use the Android MediaSession package shown by adb shell dumpsys media_session. Chrome must also be added explicitly. Wildcards are unsupported.</string>
+    <string name="media_session_fallback_title">Online lyrics fallback</string>
+    <string name="media_session_fallback_summary">Reads track information from the media playback session and searches the online sources below when primary lyrics are missing. No player setup or Lyricon source change is needed.</string>
 </resources>

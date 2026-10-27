@@ -14,7 +14,7 @@ internal object MediaSessionOnlineFallbackPolicy {
 
     fun eligible(settings: Settings, track: TrackIdentity?, sessionUsable: Boolean): Boolean =
         settings.enabled && sessionUsable && track != null &&
-            track.packageName in settings.packages && !track.polluted &&
+            track.packageName.isNotBlank() && !track.polluted &&
             meaningful(track.title) && meaningful(track.artist) && track.durationMs > 0L
 
     /** 浏览器可能复用 mediaId；真实标题/歌手变化仍要使旧查询失效。专辑补全不重取。 */
