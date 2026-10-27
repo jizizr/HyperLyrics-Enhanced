@@ -650,15 +650,33 @@ class HookEntry : XposedModule() {
                     )
                 },
                 fetchSong = { track, sources ->
-                    val lines = OnlineLyricTargeter.fetchBestLyric(
-                        context = moduleContext() ?: app,
-                        pkgName = track.packageName,
-                        title = track.title,
-                        artist = track.artist,
-                        durationMs = track.durationMs,
-                        album = track.album,
-                        sourceOrder = sources,
-                    )
+                    if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
+                        HookLogger.d("MediaSessionOnlineFallback",
+                            "开始取词: pkg=${track.packageName}, title=${track.title}, " +
+                                "artist=${track.artist}, duration=${track.durationMs}, sources=$sources")
+                    }
+                    val lines = try {
+                        // 在线源需要宿主 Application 的存储与会话；模块 Context 只用于资源。
+                        OnlineLyricTargeter.fetchBestLyric(
+                            context = app,
+                            pkgName = track.packageName,
+                            title = track.title,
+                            artist = track.artist,
+                            durationMs = track.durationMs,
+                            album = track.album,
+                            sourceOrder = sources,
+                        )
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
+                            HookLogger.w("MediaSessionOnlineFallback", "取词失败: pkg=${track.packageName}", failure)
+                        }
+                        throw failure
+                    }
+                    if (com.juren233.hyperlyricsenhanced.BuildConfig.DEBUG) {
+                        HookLogger.d("MediaSessionOnlineFallback", "取词完成: lines=${lines?.size ?: 0}")
+                    }
                     lines?.let {
                         OnlineFallbackSongMapper.map(
                             Song(id = track.normalizedKey(), name = track.title,
