@@ -7,12 +7,18 @@ import org.junit.Test
 
 class MediaSessionOnlineFallbackPolicyTest {
     private val track = TrackIdentity("org.chromium.webapk.example", title = "Song", artist = "Artist", durationMs = 180_000)
-    private val settings = Settings(enabled = true)
+    private val settings = Settings(enabled = true, packages = setOf(track.packageName, "com.android.chrome", "org.chromium.webapk.other", "native.player"))
 
-    @Test fun `any player with valid session metadata is eligible without package setup`() {
+    @Test fun `only explicitly selected browser PWA and native packages are eligible`() {
         listOf(track.packageName, "com.android.chrome", "org.chromium.webapk.other", "native.player").forEach { pkg ->
             assertTrue(pkg, MediaSessionOnlineFallbackPolicy.eligible(settings, track.copy(packageName = pkg), true))
         }
+    }
+
+    @Test fun `unselected packages and package prefixes are rejected`() {
+        assertFalse(MediaSessionOnlineFallbackPolicy.eligible(settings, track.copy(packageName = "another.player"), true))
+        assertFalse(MediaSessionOnlineFallbackPolicy.eligible(settings.copy(packages = setOf("org.chromium.webapk.*")), track, true))
+        assertFalse(MediaSessionOnlineFallbackPolicy.eligible(settings.copy(packages = emptySet()), track, true))
     }
 
     @Test fun `disabled feature and invalid sessions are ineligible`() {
@@ -36,5 +42,6 @@ class MediaSessionOnlineFallbackPolicyTest {
         val identified = track.copy(mediaId = "fixed-id")
         assertFalse(MediaSessionOnlineFallbackPolicy.sameLookupTrack(identified, identified.copy(title = "Other")))
         assertTrue(MediaSessionOnlineFallbackPolicy.sameLookupTrack(identified, identified.copy(album = "New album", durationMs = 180_001)))
+        assertFalse(MediaSessionOnlineFallbackPolicy.sameLookupTrack(identified, identified.copy(durationMs = 200_000)))
     }
 }

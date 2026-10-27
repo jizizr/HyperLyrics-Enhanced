@@ -172,9 +172,9 @@ If you only use Apple Music enhancements, you do not need to select system compo
 
 ### Online lyrics fallback
 
-Enable “Online lyrics fallback” in Lyrics settings (off by default), then play a song in any player with a media playback notification, including browsers and PWAs. No package list is needed; keep Lyricon selected. If primary lyrics are missing, the module reads the current active MediaSession and uses the existing enabled online sources in their configured order. Primary lyrics take over when they arrive.
+Enable “Online lyrics fallback” in Lyrics settings (off by default), then open “Allowed players”. Search by app name or package and use the switches to add or remove players. The list shows app icons, names and package names, including WebAPKs without launcher entries. Only selected packages can fetch lyrics; an empty selection disables lookups. Keep Lyricon selected. Missing primary lyrics use the active MediaSession and existing online source order; primary lyrics take over when they arrive.
 
-A trustworthy title, artist and positive duration are required. Placeholder or unrecovered polluted metadata and stopped sessions are excluded. Non-music media such as videos may also trigger a search; matching depends on their metadata. Pause, resume and seeking use the system playback timeline. The switch takes effect immediately.
+A trustworthy title, artist and positive duration are required. Placeholder or unrecovered polluted metadata and stopped sessions are excluded. Candidates must match the title, artist credits, duration within 1.5 seconds, and recording labels such as live or cover, avoiding timelines from different versions. Lyrics may be unavailable when no matching version exists. Pause, resume and seeking use the system playback timeline; material duration corrections invalidate outdated requests and caches. The switch and player selection take effect immediately.
 
 If lyrics are missing, inspect the system session while playing:
 
@@ -182,9 +182,9 @@ If lyrics are missing, inspect the system session while playing:
 adb shell dumpsys media_session
 ```
 
-Find the active session’s `package` and check its title, artist and duration. A PWA may use its own WebAPK package or the browser package; both are handled automatically.
+Find the active session’s `package`, check its title, artist and duration, and select the corresponding app in “Allowed players”. A PWA may use its own WebAPK package or the browser package. Selecting a browser also permits video sessions in that package with valid metadata to search for lyrics.
 
-Lyrics enter the existing native Super Island timeline. Some HyperOS / browser combinations expose a MediaSession without activating the native media island host; investigate that host activation path separately. This feature does not spoof titles or create another notification island. Device verification is pending.
+Lyrics enter the existing native Super Island timeline. Some HyperOS / browser combinations expose a MediaSession without activating the native media island host; investigate that host activation path separately. This feature does not spoof titles or create another notification island. Full device acceptance testing is pending.
 
 <a id="compatibility"></a>
 ## Compatibility and limitations

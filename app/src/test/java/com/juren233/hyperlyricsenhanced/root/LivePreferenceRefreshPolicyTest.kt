@@ -132,5 +132,8 @@ class LivePreferenceRefreshPolicyTest {
         assertTrue(LivePreferenceRefreshPolicy.contains(
             com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.ENABLED,
         ))
+        assertTrue(LivePreferenceRefreshPolicy.contains(
+            com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.PACKAGES,
+        ))
     }
 }

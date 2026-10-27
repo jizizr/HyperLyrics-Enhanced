@@ -36,7 +36,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
 
     private inner class Fixture(scope: TestScope) {
         val tracks = FakeTracks(a)
-        var settings = Settings(true, listOf(Source.NE, Source.QM))
+        var settings = Settings(true, listOf(Source.NE, Source.QM), setOf(a.packageName))
         var primary = false
         var primaryListener: (() -> Unit)? = null
         var closed = false
@@ -248,9 +248,10 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `switching between browser PWA and native players automatically fetches each track`() = runTest {
+    @Test fun `switching between selected browser PWA and native players fetches each track`() = runTest {
         val f = Fixture(this)
         val packages = listOf("com.android.chrome", "org.chromium.webapk.example", "native.player")
+        f.settings = f.settings.copy(packages = packages.toSet())
         val observed = mutableListOf<String>()
         f.fetch = { track, _ -> observed += track.packageName; song }
         f.tracks.current = a.copy(packageName = packages.first())
@@ -293,6 +294,53 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         advanceUntilIdle()
         assertEquals(listOf(originalSources, originalSources.reversed()), observed)
         assertEquals(1, f.submissions.size)
+        f.coordinator.stop()
+    }
+
+    @Test fun `unselected package never fetches and removing selected package cancels pending work`() = runTest {
+        val f = Fixture(this)
+        var cancelled = false
+        f.settings = f.settings.copy(packages = emptySet())
+        f.coordinator.start()
+        advanceUntilIdle()
+        assertEquals(0, f.calls)
+        f.fetch = { _, _ -> try { awaitCancellation() } finally { cancelled = true } }
+        f.settings = f.settings.copy(packages = setOf(a.packageName))
+        f.coordinator.refresh()
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(1, f.calls)
+        f.settings = f.settings.copy(packages = emptySet())
+        f.coordinator.refresh()
+        runCurrent()
+        assertTrue(cancelled)
+        assertTrue(f.submissions.isEmpty())
+        f.coordinator.stop()
+    }
+
+    @Test fun `material duration refresh restarts lookup and rejects delayed old version`() = runTest {
+        val f = Fixture(this)
+        val result = CompletableDeferred<Song?>()
+        val corrected = a.copy(durationMs = 240_000)
+        f.fetch = { track, _ -> if (track == a) withContext(NonCancellable) { result.await() } else song }
+        f.coordinator.start()
+        advanceTimeBy(1_500); runCurrent()
+        f.tracks.change(corrected)
+        advanceTimeBy(1_500); runCurrent()
+        result.complete(song)
+        advanceUntilIdle()
+        assertEquals(2, f.calls)
+        assertEquals(listOf(corrected), f.submissions.map { it.track })
+        f.coordinator.stop()
+    }
+
+    @Test fun `success cached with outdated duration cannot be reused for corrected metadata`() = runTest {
+        val f = Fixture(this)
+        f.coordinator.start()
+        advanceUntilIdle()
+        f.tracks.change(a.copy(durationMs = 240_000))
+        advanceUntilIdle()
+        assertEquals(2, f.calls)
+        assertEquals(240_000L, f.submissions.last().track?.durationMs)
         f.coordinator.stop()
     }
 

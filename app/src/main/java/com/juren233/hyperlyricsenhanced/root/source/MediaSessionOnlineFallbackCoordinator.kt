@@ -51,6 +51,7 @@ internal class MediaSessionOnlineFallbackCoordinator(
     private val cache = linkedMapOf<RequestKey, Cached>()
     private var request: Job? = null
     private var currentKey: RequestKey? = null
+    private var requestTrack: TrackIdentity? = null
     private var generation = 0L
     private var started = false
     private var stopped = false
@@ -77,7 +78,10 @@ internal class MediaSessionOnlineFallbackCoordinator(
         }
         val key = RequestKey(track.normalizedKey(), track.title.trim(), track.artist.trim(), config.sources.toList())
         // 元数据补全、位置、暂停恢复均不改变调度键；请求完成后仍保留键以避免重复提交。
-        if (currentKey == key) {
+        if (currentKey == key && requestTrack?.let {
+                MediaSessionOnlineFallbackPolicy.sameLookupTrack(it, track)
+            } == true
+        ) {
             val failed = cache[key]?.takeIf { it.song == null }
             if (request?.isActive == true || timeline.hasFallback(track) ||
                 (failed != null && failed.expiresAt > nowMs())
@@ -85,6 +89,7 @@ internal class MediaSessionOnlineFallbackCoordinator(
         }
         cancelRequest()
         currentKey = key
+        requestTrack = track
         val token = generation
         request = scope.launch {
             delay(graceMs)
@@ -136,6 +141,7 @@ internal class MediaSessionOnlineFallbackCoordinator(
         request?.cancel()
         request = null
         currentKey = null
+        requestTrack = null
     }
 
     fun stop() {

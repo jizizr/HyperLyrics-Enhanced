@@ -647,6 +647,9 @@ class HookEntry : XposedModule() {
                             IslandRuntimePreferenceOverrides.getBoolean(
                                 MediaSessionOnlineFallbackPreferences.ENABLED, stored.enabled,
                             ),
+                        packages = IslandRuntimePreferenceOverrides.getStringSet(
+                            MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
+                        ).orEmpty(),
                     )
                 },
                 fetchSong = { track, sources ->
@@ -665,6 +668,7 @@ class HookEntry : XposedModule() {
                             durationMs = track.durationMs,
                             album = track.album,
                             sourceOrder = sources,
+                            requireExactVersion = true,
                         )
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         throw cancelled
