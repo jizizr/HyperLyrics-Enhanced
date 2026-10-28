@@ -643,13 +643,11 @@ class HookEntry : XposedModule() {
                 settings = {
                     val stored = MediaSessionOnlineFallbackPreferences.read(prefs)
                     stored.copy(
-                        enabled = SystemUiEnhancementGate.lyricRuntimeMode() == SystemUiLyricRuntimeMode.LYRIC_DISPLAY &&
-                            IslandRuntimePreferenceOverrides.getBoolean(
-                                MediaSessionOnlineFallbackPreferences.ENABLED, stored.enabled,
-                            ),
-                        packages = IslandRuntimePreferenceOverrides.getStringSet(
-                            MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
-                        ).orEmpty(),
+                        packages = if (SystemUiEnhancementGate.lyricRuntimeMode() == SystemUiLyricRuntimeMode.LYRIC_DISPLAY) {
+                            IslandRuntimePreferenceOverrides.getStringSet(
+                                MediaSessionOnlineFallbackPreferences.PACKAGES, stored.packages,
+                            ).orEmpty()
+                        } else emptySet(),
                     )
                 },
                 fetchSong = { track, sources ->

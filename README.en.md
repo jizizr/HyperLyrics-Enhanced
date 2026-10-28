@@ -170,22 +170,6 @@ If you only use Apple Music enhancements, you do not need to select system compo
 > [!TIP]
 > Missing a feature entry? Check **App settings → Feature switches**. Xiaomi-specific entries are initially enabled or disabled based on the device brand, while the Apple Music entry also depends on whether Apple Music is installed. Manually enabling an entry does not make an unsupported system feature available.
 
-### Online lyrics fallback
-
-Enable “Online lyrics fallback” in Lyrics settings (off by default), then open “Allowed players”. Search by app name or package and use the switches to add or remove players. The list shows app icons, names and package names, including WebAPKs without launcher entries. Only selected packages can fetch lyrics; an empty selection disables lookups. Keep Lyricon selected. Missing primary lyrics use the active MediaSession and existing online source order; primary lyrics take over when they arrive.
-
-A trustworthy title, artist and positive duration are required. Placeholder or unrecovered polluted metadata and stopped sessions are excluded. Candidates must match the title, artist credits, duration within 1.5 seconds, and recording labels such as live or cover, avoiding timelines from different versions. Lyrics may be unavailable when no matching version exists. Pause, resume and seeking use the system playback timeline; material duration corrections invalidate outdated requests and caches. The switch and player selection take effect immediately.
-
-If lyrics are missing, inspect the system session while playing:
-
-```bash
-adb shell dumpsys media_session
-```
-
-Find the active session’s `package`, check its title, artist and duration, and select the corresponding app in “Allowed players”. A PWA may use its own WebAPK package or the browser package. Selecting a browser also permits video sessions in that package with valid metadata to search for lyrics.
-
-Lyrics enter the existing native Super Island timeline. Some HyperOS / browser combinations expose a MediaSession without activating the native media island host; investigate that host activation path separately. This feature does not spoof titles or create another notification island. Full device acceptance testing is pending.
-
 <a id="compatibility"></a>
 ## Compatibility and limitations
 
@@ -234,6 +218,15 @@ Use the features supported by your environment: non-Xiaomi devices can use Apple
 <summary><strong>Does disabling a feature entry only hide its page?</strong></summary>
 
 No. The entry switch also disables the features it controls, saves their previous toggle state, and restores that state when the entry is enabled again. To adjust appearance rather than disable a feature, use the individual options on its settings page.
+
+</details>
+
+<details>
+<summary><strong>How do I fetch online lyrics for a browser, PWA or another player without lyrics?</strong></summary>
+
+Open Lyrics settings → 3rd-Party Online Sources, tap “More Apps” at the bottom of the “Enabled Apps” card, then search for and select the apps, including WebAPKs without launcher entries. Only selected apps can fetch lyrics; nothing is selected by default, and an empty selection disables lookups. When the primary source has no lyrics, the platform source order on that page is used, and primary lyrics take over when they arrive. Lyricon can stay selected.
+
+The player must provide a trustworthy title, artist and duration. A candidate must also match the title, artist credits and version labels such as live or cover, with a duration within 1.5 seconds, so lyrics may be unavailable when no matching version exists. If you are unsure which app to select, run `adb shell dumpsys media_session` while playing and find the active session’s `package` (a PWA may use its own WebAPK package or the browser package), then check the package name shown under each app in “More Apps”.
 
 </details>
 

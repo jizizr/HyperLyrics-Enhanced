@@ -897,9 +897,6 @@
     <string name="provider_update_notification_name_separator">" &amp; "</string>
     <string name="title_misc">Miscellaneous</string>
     <string name="title_review_setup">Revisit the basic setup flow</string>
-    <string name="media_session_fallback_title">Online lyrics fallback</string>
-    <string name="media_session_fallback_summary">Fetches online lyrics for selected players when primary lyrics are missing. Primary lyrics take priority; keep Lyricon selected.</string>
-    <string name="media_session_fallback_players">Allowed players</string>
+    <string name="media_session_fallback_more_apps">More Apps</string>
     <string name="media_session_fallback_players_count">%1$d apps added</string>
-    <string name="media_session_fallback_players_help">Search by app name or package and use the switches to add or remove players. Only added apps can fetch lyrics. A PWA may use its own package or the browser package.</string>
 </resources>

@@ -36,7 +36,7 @@ class MediaSessionOnlineFallbackCoordinatorTest {
 
     private inner class Fixture(scope: TestScope) {
         val tracks = FakeTracks(a)
-        var settings = Settings(true, listOf(Source.NE, Source.QM), setOf(a.packageName))
+        var settings = Settings(listOf(Source.NE, Source.QM), setOf(a.packageName))
         var primary = false
         var primaryListener: (() -> Unit)? = null
         var closed = false
@@ -76,12 +76,12 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `disabled invalid and placeholder tracks never fetch`() = runTest {
+    @Test fun `empty player list invalid and placeholder tracks never fetch`() = runTest {
         val f = Fixture(this)
-        f.settings = f.settings.copy(enabled = false)
+        f.settings = f.settings.copy(packages = emptySet())
         f.coordinator.start()
         advanceUntilIdle()
-        f.settings = f.settings.copy(enabled = true)
+        f.settings = f.settings.copy(packages = setOf(a.packageName))
         f.tracks.usable = false
         f.coordinator.refresh()
         advanceUntilIdle()
@@ -187,16 +187,16 @@ class MediaSessionOnlineFallbackCoordinatorTest {
         f.coordinator.stop()
     }
 
-    @Test fun `disabling feature and stopping session cancel pending requests`() = runTest {
+    @Test fun `clearing player list and stopping session cancel pending requests`() = runTest {
         val f = Fixture(this)
         var cancelled = 0
         f.fetch = { _, _ -> try { awaitCancellation() } finally { cancelled++ } }
         f.coordinator.start()
         advanceTimeBy(1_500); runCurrent()
-        f.settings = f.settings.copy(enabled = false)
+        f.settings = f.settings.copy(packages = emptySet())
         f.coordinator.refresh(); runCurrent()
         assertEquals(1, cancelled)
-        f.settings = f.settings.copy(enabled = true)
+        f.settings = f.settings.copy(packages = setOf(a.packageName))
         f.coordinator.refresh()
         advanceTimeBy(1_500); runCurrent()
         f.tracks.usable = false

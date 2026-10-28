@@ -899,9 +899,6 @@
     <string name="provider_update_notification_name_separator">、</string>
     <string name="title_misc">杂项</string>
     <string name="title_review_setup">回顾基础设置流程页</string>
-    <string name="media_session_fallback_title">在线歌词回退</string>
-    <string name="media_session_fallback_summary">为选定播放器补充在线歌词，主歌词源有词时优先使用主源，无需切换 Lyricon。</string>
-    <string name="media_session_fallback_players">适用播放器</string>
+    <string name="media_session_fallback_more_apps">更多App</string>
     <string name="media_session_fallback_players_count">已添加 %1$d 个应用</string>
-    <string name="media_session_fallback_players_help">搜索应用名或包名，通过开关添加或移除。仅对已添加应用取词；PWA 可能使用独立应用或浏览器的包名。</string>
 </resources>

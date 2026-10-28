@@ -14,7 +14,7 @@ internal object MediaSessionOnlineFallbackPolicy {
     )
 
     fun eligible(settings: Settings, track: TrackIdentity?, sessionUsable: Boolean): Boolean =
-        settings.enabled && sessionUsable && track != null &&
+        sessionUsable && track != null &&
             track.packageName.isNotBlank() && track.packageName in settings.packages && !track.polluted &&
             meaningful(track.title) && meaningful(track.artist) && track.durationMs > 0L
 

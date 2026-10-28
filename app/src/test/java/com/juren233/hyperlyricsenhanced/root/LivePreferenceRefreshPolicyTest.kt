@@ -128,10 +128,7 @@ class LivePreferenceRefreshPolicyTest {
     }
 
     @Test
-    fun `online fallback switch refreshes SystemUI immediately`() {
-        assertTrue(LivePreferenceRefreshPolicy.contains(
-            com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.ENABLED,
-        ))
+    fun `online fallback player list refreshes SystemUI immediately`() {
         assertTrue(LivePreferenceRefreshPolicy.contains(
             com.juren233.hyperlyricsenhanced.common.MediaSessionOnlineFallbackPreferences.PACKAGES,
         ))

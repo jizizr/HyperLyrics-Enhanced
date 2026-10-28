@@ -100,9 +100,7 @@ internal fun InstalledAppSelectionPage(
     title: String,
     enabledPackages: Set<String>,
     onCheckedChange: (String, Boolean) -> Unit,
-    subtitle: String = "",
     includeNonLauncherApps: Boolean = false,
-    showPackageNames: Boolean = false,
 ) {
     val context = LocalContext.current
     val installedAppsPermission = remember(context) {
@@ -152,7 +150,7 @@ internal fun InstalledAppSelectionPage(
     val enabledApps = filteredApps.filter { it.app.packageName in enabledPackages }
     val disabledApps = filteredApps.filter { it.app.packageName !in enabledPackages }
 
-    XposedLyricSettingPage(title = title, subtitle = subtitle) {
+    XposedLyricSettingPage(title = title) {
         item(key = "search") {
             AppSearchField(
                 query = searchQuery,
@@ -166,7 +164,6 @@ internal fun InstalledAppSelectionPage(
             enabledPackages = enabledPackages,
             isLoading = installedApps == null,
             onCheckedChange = onCheckedChange,
-            showPackageNames = showPackageNames,
         )
         appSection(
             keyPrefix = "disabled",
@@ -175,7 +172,6 @@ internal fun InstalledAppSelectionPage(
             enabledPackages = enabledPackages,
             isLoading = installedApps == null,
             onCheckedChange = onCheckedChange,
-            showPackageNames = showPackageNames,
         )
     }
 }
@@ -249,7 +245,6 @@ private fun LazyListScope.appSection(
     enabledPackages: Set<String>,
     isLoading: Boolean,
     onCheckedChange: (String, Boolean) -> Unit,
-    showPackageNames: Boolean,
 ) {
     item(key = "${keyPrefix}_title") {
         SmallTitle(text = stringResource(titleRes))
@@ -319,7 +314,6 @@ private fun LazyListScope.appSection(
                     app = installedApp.app,
                     icon = installedApp.icon,
                     checked = installedApp.app.packageName in enabledPackages,
-                    showPackageName = showPackageNames,
                     onCheckedChange = { checked ->
                         onCheckedChange(installedApp.app.packageName, checked)
                     },
@@ -335,11 +329,11 @@ private fun IslandMusicAppSwitchPreference(
     icon: Bitmap?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    showPackageName: Boolean,
 ) {
     SwitchPreference(
         title = app.displayName,
-        summary = if (showPackageName) app.packageName else null,
+        // 读不到应用名时名称即包名，不再重复显示。
+        summary = app.packageName.takeIf { it != app.displayName },
         checked = checked,
         onCheckedChange = onCheckedChange,
         startAction = {

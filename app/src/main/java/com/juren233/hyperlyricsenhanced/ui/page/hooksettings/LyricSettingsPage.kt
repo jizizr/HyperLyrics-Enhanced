@@ -252,10 +252,6 @@ fun LyricSettingsPage() {
             }
         }
 
-        item(key = "media_session_online_fallback") {
-            MediaSessionOnlineFallbackSettings()
-        }
-
         item(key = "online_translation_sources") {
             Card(
                 modifier = Modifier
